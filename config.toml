@@ -1,0 +1,17 @@
+[app]
+local_folder = "~/Chem/doc/projects/"
+
+[remotes.jupiter]
+name = "jupiter"
+host = "150.162.31.2"
+user = "vport"
+port = "2222"
+remote_folder = "/home/vport/projects/"
+
+[remotes.newton]
+name = "newton"
+host = "newton.cesup.ufrgs.br"
+user = "vport"
+port = ""
+remote_folder = "/mnt/data/vport/projects/"
+
