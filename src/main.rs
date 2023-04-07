@@ -1,7 +1,56 @@
 #![allow(unused_variables, unused_imports)]
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use recli::get_config;
+use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RecliConfig {
+    app: AppSettings,
+    remotes: HashMap<String, RemoteLocationSettings>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct AppSettings {
+    local_folder: String,
+    script_folder: String,
+    parser_folder: String,
+}
+
+//todo implement a queue script location for submitting and a parser for trating queue commands
+#[derive(Serialize, Deserialize, Debug)]
+struct RemoteLocationSettings {
+    host: String,
+    user: String,
+    port: String,
+    queue_script: String,
+    parser: String,
+    remote_folder: String,
+}
+
+impl ::std::default::Default for RecliConfig {
+    fn default() -> Self {
+        let a = String::from("a");
+        Self {
+            app: AppSettings {
+                local_folder: (String::from("~/projects/")),
+                script_folder: (String::from("~/.config/recli/scripts")),
+                parser_folder: (String::from("~/.config/recli/parsers")),
+            },
+            remotes: HashMap::from([(
+                String::from("example"),
+                RemoteLocationSettings {
+                    host: String::from("host"),
+                    user: String::from("exampleuser"),
+                    port: String::from("22"),
+                    queue_script: String::from("example_qprep.py"),
+                    parser: String::from("PBS.py"),
+                    remote_folder: String::from("/mnt/data/exampleuser/projects"),
+                },
+            )]),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

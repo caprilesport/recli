@@ -1,17 +1,21 @@
 [app]
-local_folder = "~/Chem/doc/projects/"
+local_folder = "~/Chem/doc/projects"
+script_folder = "~/.config/recli/scripts"
+parser_folder = "~/.config/recli/parsers"
 
 [remotes.jupiter]
-name = "jupiter"
 host = "150.162.31.2"
 user = "vport"
 port = "2222"
-remote_folder = "/home/vport/projects/"
+parser = "PBS.py"
+queue_script = "qprep_jupiter.sh"
+remote_folder = "/home/vport/projects"
 
 [remotes.newton]
-name = "newton"
 host = "newton.cesup.ufrgs.br"
 user = "vport"
 port = ""
-remote_folder = "/mnt/data/vport/projects/"
+parser = "PBS.py"
+queue_script = "qprep_newton.sh"
+remote_folder = "/mnt/data/vport/projects"
 
