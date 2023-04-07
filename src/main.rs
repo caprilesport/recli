@@ -64,15 +64,36 @@ struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(version, author, about)]
 enum Mode {
-    /// generates a .gedent.toml file with configurations to be used
-    /// in the current project, options are a file to be used as default, if none
-    /// is provided, use the default in ~/.config/gedent
-    Push { remote: String },
-    ///Generate a new input based on a template and a xyz file
-    Pull { remote: String },
-    /// Submits a job in the specified remote
-    Sub { remote: String, inpfile: String },
+    /// pushes a file to the remote, if --all is given, push all files in the current dir
+    Push {
+        remote: String,
+    },
+    Pull {
+        remote: String,
+    },
+    Sub {
+        remote: String,
+        inpfile: String,
+    },
+}
+
+fn get_config() -> Result<RecliConfig, confy::ConfyError> {
+    let cfg: RecliConfig = confy::load("recli", "config")?;
+    Ok(cfg)
+}
+
+fn remote_push(remote: String, cfg: RecliConfig) {
+    println!("pushing all files to {}", remote)
+}
+
+fn remote_pull(remote: String, cfg: RecliConfig) {
+    println!("pulling all files to {}", remote)
+}
+
+fn submit_job(remote: String, inpfile: String, cfg: RecliConfig) {
+    println!("submitting job {} at {}", inpfile, remote)
 }
 
 fn main() -> Result<()> {
@@ -81,27 +102,15 @@ fn main() -> Result<()> {
 
     match cli.mode {
         Mode::Push { remote } => {
-            remote_push(remote);
+            remote_push(remote, cfg);
         }
         Mode::Pull { remote } => {
-            remote_pull(remote);
+            remote_pull(remote, cfg);
         }
         Mode::Sub { remote, inpfile } => {
-            submit_job(remote, inpfile);
+            submit_job(remote, inpfile, cfg);
         }
     };
 
     Ok(())
-}
-
-fn remote_push(remote: String) {
-    println!("{}", remote)
-}
-
-fn remote_pull(remote: String) {
-    println!("generating input")
-}
-
-fn submit_job(remote: String, inpfile: String) {
-    println!("generating new template")
 }
