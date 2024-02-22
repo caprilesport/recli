@@ -1,14 +1,18 @@
-#![allow(unused_variables, unused_imports)]
+#![allow(dead_code, unused_variables, unused_imports)]
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use recli::get_config;
+
+mod config;
+mod server;
+mod worker;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
+#[command(arg_required_else_help = true)]
 struct Cli {
     #[command(subcommand)]
-    mode: Mode,
+    mode: Option<Mode>,
     /// Verbosity options.
     #[clap(flatten)]
     verbosity: clap_verbosity_flag::Verbosity,
@@ -16,43 +20,48 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    /// generates a .gedent.toml file with configurations to be used
-    /// in the current project, options are a file to be used as default, if none
-    /// is provided, use the default in ~/.config/gedent
-    Push { remote: String },
-    ///Generate a new input based on a template and a xyz file
-    Pull { remote: String },
     /// Submits a job in the specified remote
-    Sub { remote: String, inpfile: String },
+    Job {
+        #[command(subcommand)]
+        subcommand: JobSubcommand,
+    },
+    Server {
+        #[command(subcommand)]
+        subcommand: ServerSubcommand,
+    },
+    Worker {
+        #[command(subcommand)]
+        subcommand: WorkerSubcommand,
+    },
+    Submit,
+}
+
+#[derive(Debug, Subcommand)]
+enum WorkerSubcommand {
+    Start { worker: String },
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ServerSubcommand {
+    Start,
+    Stop,
+}
+
+#[derive(Debug, Subcommand)]
+enum JobSubcommand {
+    List,
+    Retrieve,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let cfg = get_config()?;
 
-    match cli.mode {
-        Mode::Push { remote } => {
-            remote_push(remote);
-        }
-        Mode::Pull { remote } => {
-            remote_pull(remote);
-        }
-        Mode::Sub { remote, inpfile } => {
-            submit_job(remote, inpfile);
-        }
-    };
+    // match cli.mode {
+    //     Mode::Sub { remote, inpfile } => {
+    //         submit_job(remote, inpfile);
+    //     }
+    // };
 
     Ok(())
-}
-
-fn remote_push(remote: String) {
-    println!("{}", remote)
-}
-
-fn remote_pull(remote: String) {
-    println!("generating input")
-}
-
-fn submit_job(remote: String, inpfile: String) {
-    println!("generating new template")
 }
