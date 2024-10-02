@@ -1,0 +1,18 @@
+[[remote]]
+name = "jupiter"
+user = "vport"
+work-directory = "/scratch/vport"
+queue-manager = "pbs"
+
+[[remote]]
+name = "lagoon"
+user = "vport"
+work-directory = "/run/media/vport/data/work_dir"
+queue-manager = "lagoon"
+
+[manager.local1.config]
+
+[local]
+name = "pipeline"
+
+
