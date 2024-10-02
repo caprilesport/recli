@@ -1,10 +1,11 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use openssh::{KnownHosts, Session};
+
+use std::path::PathBuf;
 
 mod config;
-mod server;
-mod worker;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -12,7 +13,7 @@ mod worker;
 #[command(arg_required_else_help = true)]
 struct Cli {
     #[command(subcommand)]
-    mode: Option<Mode>,
+    mode: Mode,
     /// Verbosity options.
     #[clap(flatten)]
     verbosity: clap_verbosity_flag::Verbosity,
@@ -20,48 +21,35 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    /// Submits a job in the specified remote
-    Job {
-        #[command(subcommand)]
-        subcommand: JobSubcommand,
-    },
-    Server {
-        #[command(subcommand)]
-        subcommand: ServerSubcommand,
-    },
-    Worker {
-        #[command(subcommand)]
-        subcommand: WorkerSubcommand,
-    },
-    Submit,
+    Submit { inpfile: PathBuf, remote: String },
+    // Check,
+    // Sync,
 }
 
-#[derive(Debug, Subcommand)]
-enum WorkerSubcommand {
-    Start { worker: String },
-    List,
-}
-
-#[derive(Debug, Subcommand)]
-enum ServerSubcommand {
-    Start,
-    Stop,
-}
-
-#[derive(Debug, Subcommand)]
-enum JobSubcommand {
-    List,
-    Retrieve,
-}
-
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // match cli.mode {
-    //     Mode::Sub { remote, inpfile } => {
-    //         submit_job(remote, inpfile);
-    //     }
-    // };
+    match cli.mode {
+        Mode::Submit { remote, inpfile } => test_ssh().await?,
+        // Mode::Sync => println!("Syncing").await?,
+        // Mode::Check => println!("Checking"),
+    };
+
+    Ok(())
+}
+
+async fn test_ssh() -> Result<()> {
+    let session = Session::connect("vport@jupiter", KnownHosts::Strict).await?;
+
+    let ls = session.command("ls").output().await?;
+    println!("{}", String::from_utf8(ls.stdout)?);
+
+    let whoami = session.command("pwd").output().await?;
+
+    println!("{}", String::from_utf8(whoami.stdout)?);
+
+    session.close().await?;
 
     Ok(())
 }
