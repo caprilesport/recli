@@ -2,10 +2,13 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use openssh::{KnownHosts, Session};
+use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 use std::path::PathBuf;
 
 mod config;
+mod remote;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -22,8 +25,11 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Mode {
     Submit { inpfile: PathBuf, remote: String },
+    Pull { remote: String },
+    Push { remote: String },
     // Check,
     // Sync,
+    // Tree,
 }
 
 #[tokio::main]
@@ -32,6 +38,14 @@ async fn main() -> Result<()> {
 
     match cli.mode {
         Mode::Submit { remote, inpfile } => test_ssh().await?,
+        Mode::Pull { remote } => test_ssh().await?,
+        Mode::Push { remote } => test_ssh().await?,
+        // API i would like:
+        // remote = Remote::from_string(remote)?;
+        // remote.submit(inpfile, queue)
+        // or remote.pull(inpfile, queue)
+        //
+
         // Mode::Sync => println!("Syncing").await?,
         // Mode::Check => println!("Checking"),
     };
@@ -40,7 +54,7 @@ async fn main() -> Result<()> {
 }
 
 async fn test_ssh() -> Result<()> {
-    let session = Session::connect("vport@jupiter", KnownHosts::Strict).await?;
+    let session = Session::connect("vport@jupiter", KnownHosts::Accept).await?;
 
     let ls = session.command("ls").output().await?;
     println!("{}", String::from_utf8(ls.stdout)?);
