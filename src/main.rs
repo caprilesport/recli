@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use openssh::{KnownHosts, Session};
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::process::Command;
 
 use std::path::PathBuf;
@@ -24,9 +25,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    Submit { inpfile: PathBuf, remote: String },
+    // Submit { inpfile: PathBuf, remote: String },
     Pull { remote: String },
-    Push { remote: String },
+    // Push { remote: String },
     // Check,
     // Sync,
     // Tree,
@@ -35,11 +36,13 @@ enum Mode {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let mut config = crate::config::Config::read_config()?;
+    // dbg!(config);
 
     match cli.mode {
-        Mode::Submit { remote, inpfile } => test_ssh().await?,
-        Mode::Pull { remote } => test_ssh().await?,
-        Mode::Push { remote } => test_ssh().await?,
+        // Mode::Submit { remote, inpfile } => test_ssh().await?,
+        Mode::Pull { remote } => dbg!(validate_path(config.remotes.pop().unwrap(), config)),
+        // Mode::Push { remote } => test_ssh().await?,
         // API i would like:
         // remote = Remote::from_string(remote)?;
         // remote.submit(inpfile, queue)
@@ -53,17 +56,31 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn test_ssh() -> Result<()> {
-    let session = Session::connect("vport@jupiter", KnownHosts::Accept).await?;
+fn validate_path(remote: remote::Remote, config: config::Config) -> bool {
+    let mut cwd = std::env::current_dir().unwrap();
 
-    let ls = session.command("ls").output().await?;
-    println!("{}", String::from_utf8(ls.stdout)?);
+    while cwd.pop() {
+        if cwd == config.local.projects_folder {
+            return true;
+        }
+    }
 
-    let whoami = session.command("pwd").output().await?;
+    return false;
 
-    println!("{}", String::from_utf8(whoami.stdout)?);
-
-    session.close().await?;
-
-    Ok(())
+    // println!("{:?}, {:?}", cwd, config.local.projects_folder);
 }
+
+// async fn test_ssh(remote: remote::Remote, config: config::Config) -> Result<()> {
+//     let session = Session::connect("vport@jupiter", KnownHosts::Accept).await?;
+
+//     let ls = session.command("ls").output().await?;
+//     println!("{}", String::from_utf8(ls.stdout)?);
+
+//     let whoami = session.command("pwd").output().await?;
+
+//     println!("{}", String::from_utf8(whoami.stdout)?);
+
+//     session.close().await?;
+
+//     Ok(())
+// }

@@ -8,14 +8,19 @@ pub enum QueueError {
     SubmitError,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Local {
+    pub projects_folder: PathBuf,
+    // submit_command: ,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Remote {
-    alias: String,
-    ip: std::net::Ipv4Addr,
-    port: Option<u32>,
-    user: String,
+    pub name: String,
+    pub user: String,
+    pub work_directory: PathBuf,
+    // queue_manager: impl QueueManager,
     // queue: Option<QueueManager>,
-    work_dir: PathBuf,
     // submit_command: Command,
 }
 
@@ -31,7 +36,7 @@ pub enum Status {
 }
 
 pub struct Job {
-    local_id: u32,
+    id: u32,
     remote_id: u32,
     location: Remote,
     status: Status,
