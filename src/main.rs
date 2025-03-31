@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_variables, unused_imports)]
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use openssh::{KnownHosts, Session};
 use serde::{Deserialize, Serialize};
@@ -33,15 +33,15 @@ enum Mode {
     // Tree,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+// #[tokio::main]
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let mut config = crate::config::Config::read_config()?;
     // dbg!(config);
 
     match cli.mode {
         // Mode::Submit { remote, inpfile } => test_ssh().await?,
-        Mode::Pull { remote } => dbg!(validate_path(config.remotes.pop().unwrap(), config)),
+        Mode::Pull { remote } => println!("unimplemented"),
         // Mode::Push { remote } => test_ssh().await?,
         // API i would like:
         // remote = Remote::from_string(remote)?;
@@ -54,20 +54,6 @@ async fn main() -> Result<()> {
     };
 
     Ok(())
-}
-
-fn validate_path(remote: remote::Remote, config: config::Config) -> bool {
-    let mut cwd = std::env::current_dir().unwrap();
-
-    while cwd.pop() {
-        if cwd == config.local.projects_folder {
-            return true;
-        }
-    }
-
-    return false;
-
-    // println!("{:?}, {:?}", cwd, config.local.projects_folder);
 }
 
 // async fn test_ssh(remote: remote::Remote, config: config::Config) -> Result<()> {
