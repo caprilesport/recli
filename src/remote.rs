@@ -27,34 +27,64 @@ pub struct Local {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Remote {
-    pub name: String,
-    pub user: String,
-    pub work_directory: PathBuf,
+    name: String,
+    user: String,
+    work_directory: PathBuf,
     // queue_manager: impl QueueManager,
     // queue: Option<QueueManager>,
     // submit_command: Command,
 }
 
 impl Remote {
-    fn get_remote_path(&self, local: Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
+    fn get_remote_path(&self, local: &Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
         let suffix = cwd.strip_prefix(&local.projects_folder)?;
         Ok(self.work_directory.join(suffix))
     }
+    // rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
+    // TODO: add ignore options
+    fn push(
+        &self,
+        cwd: PathBuf,
+        local: Local,
+        sync: bool,
+    ) -> Result<duct::Expression, RemoteError> {
+        let target = self.get_remote_path(&local, cwd)?;
+        let source = local.projects_folder;
 
-    fn push(&self, sync: bool) -> duct::Expression {
+        if sync {
+            Ok(duct::cmd!("rsync", "-rtvuc", "--delete", source, target))
+        } else {
+            Ok(duct::cmd!("rsync", "-rtvuc", source, target))
+        }
+    }
+
+    fn pull(
+        &self,
+        cwd: PathBuf,
+        local: Local,
+        sync: bool,
+    ) -> Result<duct::Expression, RemoteError> {
+        let source = self.get_remote_path(&local, cwd)?;
+        let target = local.projects_folder;
+
+        if sync {
+            Ok(duct::cmd!("rsync", "-rtvuc", "--delete", source, target))
+        } else {
+            Ok(duct::cmd!("rsync", "-rtvuc", source, target))
+        }
+    }
+
+    fn diff(
+        &self,
+        cwd: PathBuf,
+        local: Local,
+        sync: bool,
+    ) -> Result<duct::Expression, RemoteError> {
         unimplemented!()
     }
 
-    fn pull(&self, sync: bool) -> duct::Expression {
-        unimplemented!()
-    }
-
-    fn diff(&self) -> duct::Expression {
-        unimplemented!()
-    }
+    fn create_remote_dir(&self, target: PathBuf) {}
 }
-
-// rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
 
 pub trait QueueManager {
     fn status(job: Job) -> Status;
@@ -93,7 +123,7 @@ mod tests {
 
         let cwd = PathBuf::from("/home/test_user/projects/project_a");
 
-        match remote.get_remote_path(local_project, cwd) {
+        match remote.get_remote_path(&local_project, cwd) {
             Ok(path) => assert_eq!(PathBuf::from("/scratch/test_user/project_a"), path),
             Err(e) => panic!("Failed to get correct path {}", e),
         }

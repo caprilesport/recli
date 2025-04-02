@@ -32,8 +32,12 @@ enum Mode {
         #[arg(short, long)]
         sync: bool,
     },
-    // Push { remote: String },
-    // Check,
+    Push {
+        remote: String,
+        #[arg(short, long)]
+        sync: bool,
+    },
+    // Diff,
     // Sync,
 }
 
@@ -44,9 +48,6 @@ fn main() -> anyhow::Result<()> {
     // dbg!(config);
 
     match cli.mode {
-        // Mode::Submit { remote, inpfile } => test_ssh().await?,
-        Mode::Pull { remote, sync } => println!("unimplemented"),
-        // Mode::Push { remote } => test_ssh().await?,
         // API i would like:
         // remote = Remote::from_string(remote)?;
         // remote.submit(inpfile, queue)
@@ -55,6 +56,9 @@ fn main() -> anyhow::Result<()> {
 
         // Mode::Sync => println!("Syncing").await?,
         // Mode::Check => println!("Checking"),
+        // Mode::Submit { remote, inpfile } => test_ssh().await?,
+        Mode::Pull { remote, sync } => {} // Mode::Push { remote } => test_ssh().await?,
+        Mode::Push { remote, sync } => {}
     };
 
     Ok(())
