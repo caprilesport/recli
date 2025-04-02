@@ -41,12 +41,16 @@ impl Remote {
         Ok(self.work_directory.join(suffix))
     }
 
+    fn push(&self, sync: bool) -> duct::Expression {
+        unimplemented!()
+    }
 
-        let suffix = cwd
-            .strip_prefix(&local.projects_folder)
-            .map_err(|_| RemoteError::InvalidRemotePathError)?;
+    fn pull(&self, sync: bool) -> duct::Expression {
+        unimplemented!()
+    }
 
-        Ok(self.work_directory.join(suffix))
+    fn diff(&self) -> duct::Expression {
+        unimplemented!()
     }
 }
 
