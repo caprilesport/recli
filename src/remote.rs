@@ -13,9 +13,9 @@ pub enum QueueError {
 // - Errors in the config declaration for paths in remotes
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteError {
-    #[error("Current path is not a valid project subfolder")]
-    InvalidRemotePathError,
-    #[error("Failed to retrieve local path, caused by: {0}")]
+    #[error("current path is not a valid project subfolder")]
+    InvalidSubprojectPathError(#[from] std::path::StripPrefixError),
+    #[error("failed to retrieve local path, caused by: {0}")]
     InvalidLocalPathError(#[from] std::io::Error),
 }
 
@@ -50,6 +50,8 @@ impl Remote {
     }
 }
 
+// rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
+
 pub trait QueueManager {
     fn status(job: Job) -> Status;
     fn submit(job: Job);
@@ -75,7 +77,21 @@ mod tests {
 
     #[test]
     fn get_remote_path_works() {
-        assert_eq!(4, 4);
+        let remote = Remote {
+            name: "remote_test".to_string(),
+            user: "test_user".to_string(),
+            work_directory: PathBuf::from("/scratch/test_user/"),
+        };
+
+        let local_project = Local {
+            projects_folder: PathBuf::from("/home/test_user/projects"),
+        };
+
+        let cwd = PathBuf::from("/home/test_user/projects/project_a");
+
+        match remote.get_remote_path(local_project, cwd) {
+            Ok(path) => assert_eq!(PathBuf::from("/scratch/test_user/project_a"), path),
+            Err(e) => panic!("Failed to get correct path {}", e),
+        }
     }
 }
-// rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
