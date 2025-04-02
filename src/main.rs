@@ -26,22 +26,26 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Mode {
     // Submit { inpfile: PathBuf, remote: String },
-    Pull { remote: String },
+    /// Pulls the files in the respective remote
+    Pull {
+        remote: String,
+        #[arg(short, long)]
+        sync: bool,
+    },
     // Push { remote: String },
     // Check,
     // Sync,
-    // Tree,
 }
 
 // #[tokio::main]
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut config = crate::config::Config::read_config()?;
+    let config = crate::config::Config::read_config()?;
     // dbg!(config);
 
     match cli.mode {
         // Mode::Submit { remote, inpfile } => test_ssh().await?,
-        Mode::Pull { remote } => println!("unimplemented"),
+        Mode::Pull { remote, sync } => println!("unimplemented"),
         // Mode::Push { remote } => test_ssh().await?,
         // API i would like:
         // remote = Remote::from_string(remote)?;
