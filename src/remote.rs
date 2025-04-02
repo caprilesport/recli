@@ -36,12 +36,11 @@ pub struct Remote {
 }
 
 impl Remote {
-    fn get_remote_path(self: Self, local: Local) -> Result<PathBuf, RemoteError> {
-        let cwd = std::env::current_dir()?;
+    fn get_remote_path(&self, local: Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
+        let suffix = cwd.strip_prefix(&local.projects_folder)?;
+        Ok(self.work_directory.join(suffix))
+    }
 
-        if !cwd.starts_with(&local.projects_folder) {
-            return Err(RemoteError::InvalidRemotePathError);
-        }
 
         let suffix = cwd
             .strip_prefix(&local.projects_folder)
