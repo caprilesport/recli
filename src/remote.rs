@@ -18,7 +18,7 @@ pub enum RemoteError {
     #[error("failed to retrieve local path, caused by: {0}")]
     InvalidLocalPathError(#[from] std::io::Error),
     #[error("failed to reach remote, cause by: {0}")]
-    FailedToReachRemoteError(String),
+    FailedToReachRemoteError(#[from] openssh::Error),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,20 +38,26 @@ pub struct Remote {
 }
 
 impl Remote {
-    pub fn find(name: String, remotes: Vec<Remote>) -> Option<Self> {
-        return remotes.into_iter().filter(|r| r.name == name).next();
-    }
-
     // rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
     // TODO: add ignore options
-    fn push(
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub async fn push(
         &self,
         cwd: PathBuf,
         local: Local,
         sync: bool,
     ) -> Result<duct::Expression, RemoteError> {
-        let target = self.get_remote_path(&local, cwd)?;
-        let source = local.projects_folder;
+        let target_dir = self.get_remote_path(&local, &cwd)?;
+        let mut target = format!("{}:{}", self.name, target_dir.display().to_string());
+        let mut source = cwd.clone().display().to_string();
+        // directories need a trailing slash in the end for rsync
+        source.push('/');
+        target.push('/');
+
+        self.create_remote_dir(&target_dir).await?;
 
         if sync {
             Ok(duct::cmd!("rsync", "-rtvuc", "--delete", source, target))
@@ -60,14 +66,20 @@ impl Remote {
         }
     }
 
-    fn pull(
+    pub async fn pull(
         &self,
         cwd: PathBuf,
         local: Local,
         sync: bool,
     ) -> Result<duct::Expression, RemoteError> {
-        let source = self.get_remote_path(&local, cwd)?;
-        let target = local.projects_folder;
+        let source_dir = self.get_remote_path(&local, &cwd)?;
+        let mut source = format!("{}:{}", self.name, source_dir.display().to_string());
+        let mut target = local.projects_folder.display().to_string();
+        // directories need a trailing slash in the end for rsync
+        source.push('/');
+        target.push('/');
+
+        self.create_remote_dir(&source_dir).await?;
 
         if sync {
             Ok(duct::cmd!("rsync", "-rtvuc", "--delete", source, target))
@@ -76,7 +88,7 @@ impl Remote {
         }
     }
 
-    fn diff(
+    pub fn diff(
         &self,
         cwd: PathBuf,
         local: Local,
@@ -85,13 +97,26 @@ impl Remote {
         unimplemented!()
     }
 
-    fn get_remote_path(&self, local: &Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
+    fn get_remote_path(&self, local: &Local, cwd: &PathBuf) -> Result<PathBuf, RemoteError> {
         let suffix = cwd.strip_prefix(&local.projects_folder)?;
         Ok(self.work_directory.join(suffix))
     }
 
-    fn create_remote_dir(&self, target: PathBuf) -> Result<(), RemoteError> {
-        unimplemented!()
+    async fn create_remote_dir(&self, target: &std::path::Path) -> Result<(), RemoteError> {
+        let connection = format!("{}@{}", self.user, self.name);
+
+        let session = openssh::Session::connect(connection, openssh::KnownHosts::Accept).await?;
+
+        session
+            .command("mkdir")
+            .arg("-p")
+            .arg(target.to_string_lossy())
+            .output()
+            .await?;
+
+        session.close().await?;
+
+        Ok(())
     }
 }
 
@@ -132,7 +157,7 @@ mod tests {
 
         let cwd = PathBuf::from("/home/test_user/projects/project_a");
 
-        match remote.get_remote_path(&local_project, cwd) {
+        match remote.get_remote_path(&local_project, &cwd) {
             Ok(path) => assert_eq!(PathBuf::from("/scratch/test_user/project_a"), path),
             Err(e) => panic!("Failed to get correct path {}", e),
         }
