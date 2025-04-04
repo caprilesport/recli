@@ -2,6 +2,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use openssh::{KnownHosts, Session};
+use remote::Remote;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::process::Command;
@@ -41,40 +42,45 @@ enum Mode {
     // Sync,
 }
 
-// #[tokio::main]
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = crate::config::Config::read_config()?;
-    // dbg!(config);
 
     match cli.mode {
-        // API i would like:
-        // remote = Remote::from_string(remote)?;
-        // remote.submit(inpfile, queue)
-        // or remote.pull(inpfile, queue)
-        //
-
         // Mode::Sync => println!("Syncing").await?,
         // Mode::Check => println!("Checking"),
         // Mode::Submit { remote, inpfile } => test_ssh().await?,
-        Mode::Pull { remote, sync } => {} // Mode::Push { remote } => test_ssh().await?,
-        Mode::Push { remote, sync } => {}
+        Mode::Pull { remote, sync } => {
+            let cwd = std::env::current_dir()?;
+
+            let remote = match find_remote(remote, config.remotes) {
+                Some(remote) => remote,
+                None => panic!("Unable to find remote in the config"),
+            };
+
+            let push_cmd = remote.push(cwd, config.local, sync).await?;
+            push_cmd.run()?;
+        }
+        Mode::Push { remote, sync } => {
+            let cwd = std::env::current_dir()?;
+
+            let remote = match find_remote(remote, config.remotes) {
+                Some(remote) => remote,
+                None => panic!("Unable to find remote in the config"),
+            };
+
+            let pull_cmd = remote.pull(cwd, config.local, sync).await?;
+            pull_cmd.run()?;
+        }
     };
 
     Ok(())
 }
 
+fn find_remote(name: String, remotes: Vec<Remote>) -> Option<Remote> {
+    return remotes.into_iter().filter(|r| r.name() == name).next();
+}
+
 // async fn test_ssh(remote: remote::Remote, config: config::Config) -> Result<()> {
-//     let session = Session::connect("vport@jupiter", KnownHosts::Accept).await?;
-
-//     let ls = session.command("ls").output().await?;
-//     println!("{}", String::from_utf8(ls.stdout)?);
-
-//     let whoami = session.command("pwd").output().await?;
-
-//     println!("{}", String::from_utf8(whoami.stdout)?);
-
-//     session.close().await?;
-
-//     Ok(())
 // }
