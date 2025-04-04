@@ -17,6 +17,8 @@ pub enum RemoteError {
     InvalidSubprojectPathError(#[from] std::path::StripPrefixError),
     #[error("failed to retrieve local path, caused by: {0}")]
     InvalidLocalPathError(#[from] std::io::Error),
+    #[error("failed to reach remote, cause by: {0}")]
+    FailedToReachRemoteError(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -36,10 +38,10 @@ pub struct Remote {
 }
 
 impl Remote {
-    fn get_remote_path(&self, local: &Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
-        let suffix = cwd.strip_prefix(&local.projects_folder)?;
-        Ok(self.work_directory.join(suffix))
+    pub fn find(name: String, remotes: Vec<Remote>) -> Option<Self> {
+        return remotes.into_iter().filter(|r| r.name == name).next();
     }
+
     // rsync -rtvuc $ignore_flag $last_flag "$source" "$destination"
     // TODO: add ignore options
     fn push(
@@ -83,7 +85,14 @@ impl Remote {
         unimplemented!()
     }
 
-    fn create_remote_dir(&self, target: PathBuf) {}
+    fn get_remote_path(&self, local: &Local, cwd: PathBuf) -> Result<PathBuf, RemoteError> {
+        let suffix = cwd.strip_prefix(&local.projects_folder)?;
+        Ok(self.work_directory.join(suffix))
+    }
+
+    fn create_remote_dir(&self, target: PathBuf) -> Result<(), RemoteError> {
+        unimplemented!()
+    }
 }
 
 pub trait QueueManager {
