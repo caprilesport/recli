@@ -1,20 +1,17 @@
 [local]
-name = "trindatimes"
-# queue-manager = "pueue"
-# work-directory = "/run/media/vport/data/work_dir"
-project-folder = "/home/vport/projects"
+projects_folder = "/home/vport/projects"
 # submit_commands = ["pueue", "add", "--", "job", "$inpfile"]
 
-[[remote]]
+[[remotes]]
 name = "jupiter"
-work-directory = "/scratch/vport"
+user = "vport"
+work_directory = "/scratch/vport"
 # queue-manager = "pbs"
 # submit_commands = []
 
-[[remote]]
-name = "pipeline"
-work-directory = "/home/vport/projects"
+[[remotes]]
+name = "trindatimes"
+user = "vport"
+work_directory = "/home/vport/projects"
 # queue-manager = "pueue"
 # submit_commands = ["pueue", "add", "--", "job", "$inpfile"]
-
-
