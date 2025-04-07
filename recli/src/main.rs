@@ -1,7 +1,6 @@
 #![allow(dead_code, unused_variables, unused_imports)]
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use openssh::{KnownHosts, Session};
 use remote::Remote;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -10,7 +9,6 @@ use std::process::Command;
 use std::path::PathBuf;
 
 mod config;
-mod remote;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -42,8 +40,8 @@ enum Mode {
     // Sync,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+// #[tokio::main]
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = crate::config::Config::read_config()?;
 
@@ -59,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
                 None => panic!("Unable to find remote in the config"),
             };
 
-            let push_cmd = remote.push(cwd, config.local, sync).await?;
+            let push_cmd = remote.push(cwd, config.local, sync)?;
             push_cmd.run()?;
         }
         Mode::Push { remote, sync } => {
@@ -70,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
                 None => panic!("Unable to find remote in the config"),
             };
 
-            let pull_cmd = remote.pull(cwd, config.local, sync).await?;
+            let pull_cmd = remote.pull(cwd, config.local, sync)?;
             pull_cmd.run()?;
         }
     };
