@@ -62,9 +62,9 @@ fn main() -> anyhow::Result<()> {
             for remote in config.remotes {
                 let statuses = remote.status()?;
                 for job in jobs.iter_mut() {
-                    let old_status = job.status.clone();
+                    let old_status = job.status().clone();
                     job.update_status(&statuses);
-                    if job.status != old_status {
+                    if job.status() != &old_status {
                         changed_jobs.push(job.clone());
                     }
                 }
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
             } else {
                 println!("Jobs with status changes:");
                 for job in changed_jobs {
-                    println!("  - Job {}: changed to {:?}", job.id(), job.status);
+                    println!("  - Job {}: changed to {:?}", job.id(), job.status());
                 }
             }
         }
@@ -112,7 +112,7 @@ fn main() -> anyhow::Result<()> {
 
                 builder.push_record(vec![
                     job.working_dir().to_string_lossy().into_owned(),
-                    format!("{:?}", job.status),
+                    format!("{:?}", job.status()),
                     job.synced().to_string(),
                     submit_time_str,
                     job.project().to_string_lossy().into_owned(),

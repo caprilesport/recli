@@ -29,7 +29,7 @@ impl QueueManager {
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum PrepareError {
     #[error("IO, caused by {0}")]
-    InputOutputError(#[from] std::io::Error),
+    IO(#[from] std::io::Error),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -79,7 +79,7 @@ impl Remote {
     }
 
     pub fn submit(&self, job_id: uuid::Uuid, inp_file: &Path) -> Result<Job, JobError> {
-        let target = format!("{}:{}", self.hostname(), self.port);
+        let target = format!("{}:{}", self.hostname(), self.port());
 
         let tcp = TcpStream::connect(&target)?;
         let mut sess = Session::new()?;
@@ -273,10 +273,10 @@ pub struct Job {
     working_dir: PathBuf,
     #[serde(with = "os_string_as_string")]
     project: std::ffi::OsString,
-    pub status: JobStatus,
+    status: JobStatus,
     submit_time: String,
     finish_time: Option<String>,
-    pub synced: bool,
+    synced: bool,
 }
 
 impl Job {
@@ -333,6 +333,14 @@ impl Job {
 
     pub fn synced(&self) -> bool {
         self.synced
+    }
+
+    pub fn set_synced_status(&mut self, sync: bool) {
+        self.synced = sync;
+    }
+
+    pub fn status(&self) -> &JobStatus {
+        &self.status
     }
 
     pub fn update_status(&mut self, statuses: &HashMap<String, String>) {
