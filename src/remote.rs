@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use thiserror;
 
 use regex::Regex;
-use ssh2::Session;
 use std::collections::HashMap;
+
+use ssh2::Session;
 use std::io::prelude::*;
 use std::net::TcpStream;
 
