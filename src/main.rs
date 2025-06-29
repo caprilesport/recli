@@ -94,6 +94,7 @@ fn main() -> anyhow::Result<()> {
             builder.push_record([
                 "Working Dir",
                 "Status",
+                "Synced",
                 "Submit Time",
                 "Project",
                 "Remote",
@@ -118,6 +119,7 @@ fn main() -> anyhow::Result<()> {
                 builder.push_record(vec![
                     job.working_dir().to_string_lossy().into_owned(),
                     format!("{:?}", job.status),
+                    job.synced().to_string(),
                     submit_time_str,
                     job.project().to_string_lossy().into_owned(),
                     job.remote().to_string(),
