@@ -242,27 +242,6 @@ mod uuid_as_string {
     }
 }
 
-// Helper module for OsString serialization
-mod os_string_as_string {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-    use std::ffi::OsString;
-
-    pub fn serialize<S>(os_string: &OsString, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(os_string.to_str().unwrap_or_default())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<OsString, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(OsString::from(s))
-    }
-}
-
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
     #[serde(with = "uuid_as_string")]
@@ -271,8 +250,7 @@ pub struct Job {
     remote_id: String,
     basename: String,
     working_dir: PathBuf,
-    #[serde(with = "os_string_as_string")]
-    project: std::ffi::OsString,
+    project: String,
     status: JobStatus,
     submit_time: String,
     finish_time: Option<String>,
@@ -323,7 +301,7 @@ impl Job {
         &self.working_dir
     }
 
-    pub fn project(&self) -> &std::ffi::OsString {
+    pub fn project(&self) -> &str {
         &self.project
     }
 
@@ -358,11 +336,11 @@ impl Job {
         }
     }
 
-    fn find_project(cwd: PathBuf) -> Result<std::ffi::OsString, JobError> {
+    fn find_project(cwd: PathBuf) -> Result<String, JobError> {
         let project_file: PathBuf = [cwd.clone(), PathBuf::from(".recli")].iter().collect();
 
         if std::path::Path::exists(&project_file) {
-            return Ok(cwd.file_name().unwrap().to_owned());
+            return Ok(cwd.file_name().unwrap().to_str().unwrap().to_owned());
         } else {
             let parent_folder = cwd.parent();
             match parent_folder {
