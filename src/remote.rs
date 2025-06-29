@@ -333,6 +333,7 @@ impl Job {
     pub fn synced(&self) -> bool {
         self.synced
     }
+
     pub fn update_status(&mut self, statuses: &HashMap<String, String>) {
         if let Some(new_status) = statuses.get(self.remote_id()) {
             let new_status = match new_status.as_str() {
@@ -394,6 +395,36 @@ impl Job {
         let jobs = serde_json::from_reader(reader)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         Ok(jobs)
+    }
+
+    pub fn sync(&self, remote_config: &Remote) -> Result<(), JobError> {
+        println!("Syncing job {} from remote {}", self.id, self.remote);
+
+        let target = format!("{}:{}", remote_config.hostname(), remote_config.port);
+        let tcp = TcpStream::connect(&target)?;
+        let mut sess = Session::new()?;
+        sess.set_tcp_stream(tcp);
+        sess.handshake()?;
+        sess.userauth_agent(remote_config.user())?;
+
+        let sftp = sess.sftp()?;
+        let remote_job_dir = remote_config.work_dir().join(self.id.to_string());
+
+        for entry in sftp.readdir(&remote_job_dir)? {
+            let (remote_path, stat) = entry;
+            if stat.is_file() {
+                if let Some(file_name) = remote_path.file_name() {
+                    if file_name.to_string_lossy().starts_with(&self.basename) {
+                        let local_path = self.working_dir.join(file_name);
+                        let mut remote_file = sftp.open(&remote_path)?;
+                        let mut local_file = std::fs::File::create(&local_path)?;
+                        std::io::copy(&mut remote_file, &mut local_file)?;
+                        println!("Downloaded: {:?} to {:?}", remote_path, local_path);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
