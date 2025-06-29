@@ -39,6 +39,9 @@ fn main() -> anyhow::Result<()> {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
             let remote = config.get_remote(&remote);
+
+            remote.prepare(&inpfile)?;
+            let job = remote.submit(id, &inpfile)?;
         }
         Mode::Fetch => {
         }
