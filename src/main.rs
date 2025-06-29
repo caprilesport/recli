@@ -28,10 +28,9 @@ enum Mode {
     },
     Fetch,
     Sync {
-        job_id: Option<i64>,
+        job_id: Option<String>,
     },
     Status,
-    Init,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -131,35 +130,39 @@ fn main() -> anyhow::Result<()> {
             let mut jobs = remote::Job::load_jobs()?;
             let mut synced_jobs_count = 0;
 
-            for job in jobs.iter_mut() {
-                if job.status == remote::JobStatus::Finished && !job.synced() {
-                    if let Some(id) = job_id {
-                        // If a specific job_id is provided, sync only that job
-                        if job.id().to_string().starts_with(&id.to_string()) {
-                            let remote_config = config.clone().get_remote(job.remote());
-                            job.sync(&remote_config)?;
-                            job.synced = true;
-                            synced_jobs_count += 1;
-                        }
-                    } else {
+            // If a specific job_id is provided, sync only that job
+            if let Some(id) = job_id {
+                // Filter out the jobs
+                let job = jobs
+                    .iter_mut()
+                    .filter(|j| j.id().to_string() == id)
+                    .next()
+                    .unwrap();
+                let remote_config = config.clone().get_remote(job.remote());
+
+                // job.set_sync_status(true);
+                job.sync(&remote_config)?;
+            } else {
+                for job in jobs.iter_mut() {
+                    if job.status() == &remote::JobStatus::Finished
+                        || job.status() == &remote::JobStatus::Error && !job.synced()
+                    {
                         // If no job_id is provided, sync all unsynced and finished jobs
                         let remote_config = config.clone().get_remote(job.remote());
                         job.sync(&remote_config)?;
-                        job.synced = true;
+                        job.set_synced_status(true);
                         synced_jobs_count += 1;
                     }
+                }
+                if synced_jobs_count > 0 {
+                    println!("Successfully synced {} job(s).", synced_jobs_count);
+                } else {
+                    println!("No finished jobs to sync.");
                 }
             }
 
             remote::Job::save_jobs(&jobs)?;
-
-            if synced_jobs_count > 0 {
-                println!("Successfully synced {} job(s).", synced_jobs_count);
-            } else {
-                println!("No finished jobs to sync.");
-            }
         }
-        Mode::Init => println!("Create a .recli file"),
     };
 
     Ok(())
