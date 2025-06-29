@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror;
+
+use regex::Regex;
 use ssh2::Session;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::TcpStream;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 enum QueueManager {
     PBS,
@@ -152,6 +155,59 @@ impl Remote {
         )
     }
 
+    pub fn status(&self) -> Result<HashMap<String, String>, JobError> {
+        let command = match self.queue_manager {
+            QueueManager::PBS => format!("qstat -u {} -x", self.user()),
+            QueueManager::Pueue => "pueue status".to_string(),
+            _ => return Ok(HashMap::new()),
+        };
+
+        let tcp = TcpStream::connect(format!("{}:{}", self.hostname(), self.port))?;
+        let mut sess = Session::new()?;
+        sess.set_tcp_stream(tcp);
+        sess.handshake()?;
+        sess.userauth_agent(self.user())?;
+
+        let mut channel = sess.channel_session()?;
+        channel.exec(&command)?;
+        let mut output = String::new();
+        channel.read_to_string(&mut output)?;
+        channel.wait_close()?;
+
+        let mut statuses = HashMap::new();
+
+        match self.queue_manager {
+            QueueManager::PBS => {
+                for line in output.lines().skip(5) {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 10 {
+                        let job_id = parts[0].to_string();
+                        let status = parts[9].to_string();
+                        statuses.insert(job_id, status);
+                    }
+                }
+            }
+            QueueManager::Pueue => {
+                for line in output.lines().skip(3) {
+                    // Skip header and separator lines
+                    if line.starts_with("───") || line.starts_with("═") || line.is_empty() {
+                        continue;
+                    }
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        let job_id = parts[0].to_string();
+                        let status = parts[1].to_string();
+                        statuses.insert(job_id, status);
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        Ok(statuses)
+    }
+}
+
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum JobError {
     #[error("Not in a recli project folder")]
@@ -164,14 +220,57 @@ pub enum JobError {
     SubmissionFailed(i32, String),
 }
 
+// Helper module for UUID serialization
+mod uuid_as_string {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+    use uuid::Uuid;
+
+    pub fn serialize<S>(uuid: &Uuid, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&uuid.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Uuid::parse_str(&s).map_err(serde::de::Error::custom)
+    }
 }
+
+// Helper module for OsString serialization
+mod os_string_as_string {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+    use std::ffi::OsString;
+
+    pub fn serialize<S>(os_string: &OsString, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(os_string.to_str().unwrap_or_default())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<OsString, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(OsString::from(s))
+    }
+}
+
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
+    #[serde(with = "uuid_as_string")]
     id: uuid::Uuid,
     remote: String,
     remote_id: String,
     basename: String,
     working_dir: PathBuf,
+    #[serde(with = "os_string_as_string")]
     project: std::ffi::OsString,
     pub status: JobStatus,
     submit_time: String,
@@ -234,6 +333,21 @@ impl Job {
     pub fn synced(&self) -> bool {
         self.synced
     }
+    pub fn update_status(&mut self, statuses: &HashMap<String, String>) {
+        if let Some(new_status) = statuses.get(self.remote_id()) {
+            let new_status = match new_status.as_str() {
+                "Q" | "Queued" => JobStatus::Queued,
+                "R" | "Running" => JobStatus::Running,
+                "F" | "Success" | "Killed" => JobStatus::Finished,
+                "E" | "Failed" => JobStatus::Error,
+                _ => return,
+            };
+            if self.status != new_status {
+                self.status = new_status;
+            }
+        }
+    }
+
     fn find_project(cwd: PathBuf) -> Result<std::ffi::OsString, JobError> {
         let project_file: PathBuf = [cwd.clone(), PathBuf::from(".recli")].iter().collect();
 
@@ -248,6 +362,39 @@ impl Job {
         }
     }
 
+    pub fn save_jobs(jobs: &[Job]) -> Result<(), std::io::Error> {
+        let config_dir = dirs::home_dir()
+            .expect("Could not find home directory")
+            .join(".config")
+            .join("recli");
+        std::fs::create_dir_all(&config_dir)?;
+        let jobs_file = config_dir.join("jobs.json");
+        let file = std::fs::File::create(jobs_file)?;
+        serde_json::to_writer_pretty(file, jobs)?;
+        Ok(())
+    }
+
+    pub fn load_jobs() -> Result<Vec<Job>, std::io::Error> {
+        let config_dir = dirs::home_dir()
+            .expect("Could not find home directory")
+            .join(".config")
+            .join("recli");
+        let jobs_file = config_dir.join("jobs.json");
+        if !jobs_file.exists() {
+            return Ok(Vec::new());
+        }
+
+        let file = std::fs::File::open(&jobs_file)?;
+        if file.metadata()?.len() == 0 {
+            return Ok(Vec::new());
+        }
+
+        let file = std::fs::File::open(jobs_file)?;
+        let reader = std::io::BufReader::new(file);
+        let jobs = serde_json::from_reader(reader)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(jobs)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
