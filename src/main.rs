@@ -1,11 +1,6 @@
-#![allow(dead_code, unused_variables, unused_imports)]
-use anyhow::{anyhow, Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
-use std::process::Command;
+use clap::{Parser, Subcommand};
 
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use chrono::{DateTime, Local};
 use std::path::PathBuf;
 use tabled::builder::Builder;
 
