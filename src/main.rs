@@ -4,8 +4,14 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::process::Command;
+
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use std::path::PathBuf;
+use tabled::builder::Builder;
+
 mod config;
 mod remote;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -32,9 +38,11 @@ enum Mode {
     Status,
     Init,
 }
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = crate::config::Config::read_config()?;
+
     match cli.mode {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
@@ -56,6 +64,7 @@ fn main() -> anyhow::Result<()> {
         Mode::Fetch => {
             let mut jobs = remote::Job::load_jobs()?;
             let mut changed_jobs = Vec::new();
+
             for remote in config.remotes {
                 let statuses = remote.status()?;
                 for job in jobs.iter_mut() {
@@ -68,6 +77,7 @@ fn main() -> anyhow::Result<()> {
             }
 
             remote::Job::save_jobs(&jobs)?;
+
             if changed_jobs.is_empty() {
                 println!("No job status changes.");
             } else {
@@ -78,10 +88,82 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Mode::Status => {
+            let jobs = remote::Job::load_jobs()?;
+
+            let mut builder = Builder::default();
+            builder.push_record([
+                "Working Dir",
+                "Status",
+                "Submit Time",
+                "Project",
+                "Remote",
+                "Remote ID",
+                "ID",
+            ]);
+
+            for job in jobs {
+                let submit_time_str = if let Ok(timestamp) = job.submit_time().parse::<i64>() {
+                    if let Some(datetime) = DateTime::from_timestamp(timestamp, 0) {
+                        datetime
+                            .with_timezone(&Local)
+                            .format("%Y-%m-%d %H:%M:%S")
+                            .to_string()
+                    } else {
+                        "Invalid Timestamp".to_string()
+                    }
+                } else {
+                    "N/A".to_string()
+                };
+
+                builder.push_record(vec![
+                    job.working_dir().to_string_lossy().into_owned(),
+                    format!("{:?}", job.status),
+                    submit_time_str,
+                    job.project().to_string_lossy().into_owned(),
+                    job.remote().to_string(),
+                    job.remote_id().to_string(),
+                    job.id().to_string(),
+                ]);
+            }
+
+            let mut table = builder.build();
+            table.with(tabled::settings::Style::rounded());
+            println!("{table}");
         }
         Mode::Sync { job_id } => {
+            let mut jobs = remote::Job::load_jobs()?;
+            let mut synced_jobs_count = 0;
+
+            for job in jobs.iter_mut() {
+                if job.status == remote::JobStatus::Finished && !job.synced() {
+                    if let Some(id) = job_id {
+                        // If a specific job_id is provided, sync only that job
+                        if job.id().to_string().starts_with(&id.to_string()) {
+                            let remote_config = config.clone().get_remote(job.remote());
+                            job.sync(&remote_config)?;
+                            job.synced = true;
+                            synced_jobs_count += 1;
+                        }
+                    } else {
+                        // If no job_id is provided, sync all unsynced and finished jobs
+                        let remote_config = config.clone().get_remote(job.remote());
+                        job.sync(&remote_config)?;
+                        job.synced = true;
+                        synced_jobs_count += 1;
+                    }
+                }
+            }
+
+            remote::Job::save_jobs(&jobs)?;
+
+            if synced_jobs_count > 0 {
+                println!("Successfully synced {} job(s).", synced_jobs_count);
+            } else {
+                println!("No finished jobs to sync.");
+            }
         }
         Mode::Init => println!("Create a .recli file"),
     };
+
     Ok(())
 }
