@@ -1,0 +1,37 @@
+work_directory = "/home/vport/projects"
+
+[[remotes]]
+name = "jupiter"
+hostname = "150.162.31.2"
+port = 2222
+user = "vport"
+work_directory = "/scratch/vport"
+prepare_args = ["-c", "jupiter", "-q", "small"]
+queue_manager = "PBS"
+
+# [[remotes]]
+# name = "newton"
+# hostname = "newton.cesup.ufrgs.br"
+# port = 22
+# user = "vport"
+# work_directory = "/scratch/vport"
+# queue_manager = "Slurm"
+# prepare_args = ["-c", "newton"]
+
+[[remotes]]
+name = "loboc"
+hostname = "loboc.nacad.ufrj.br"
+port = 2022
+user = "vport"
+work_directory = "/scratch/vport"
+queue_manager = "PBS"
+prepare_args = ["-c", "loboc"]
+
+[[remotes]]
+name = "pipeline"
+hostname = "100.103.47.103"
+port = 22
+user = "vport"
+work_directory = "/home/vport/projects/calculations"
+queue_manager = "Pueue"
+prepare_args = ["-c", "pipeline"]
