@@ -4,7 +4,13 @@ use chrono::{DateTime, Local};
 use std::path::PathBuf;
 use tabled::builder::Builder;
 
+use connection::SshConnection;
+use job::{Job, JobStatus};
+
 mod config;
+mod connection;
+mod job;
+mod queuemanager;
 mod remote;
 
 #[derive(Parser, Debug)]
@@ -41,13 +47,13 @@ fn main() -> anyhow::Result<()> {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
             let remote = config.get_remote(&remote);
+            let connection = SshConnection::new(&remote)?;
 
-            remote.prepare(&inpfile)?;
-            let job = remote.submit(id, &inpfile)?;
+            let job = remote.submit(id, &inpfile, &connection)?;
 
-            let mut jobs = remote::Job::load_jobs()?;
+            let mut jobs = Job::load_jobs()?;
             jobs.push(job);
-            remote::Job::save_jobs(&jobs)?;
+            Job::save_jobs(&jobs)?;
 
             println!(
                 "Job submitted successfully with id: {}. Remote id: {}",
@@ -56,21 +62,27 @@ fn main() -> anyhow::Result<()> {
             );
         }
         Mode::Fetch => {
-            let mut jobs = remote::Job::load_jobs()?;
+            let mut jobs = Job::load_jobs()?;
             let mut changed_jobs = Vec::new();
 
             for remote in config.remotes {
-                let statuses = remote.status()?;
+                let connection = SshConnection::new(&remote)?;
+                let statuses = remote.status(&connection)?;
                 for job in jobs.iter_mut() {
                     let old_status = job.status().clone();
-                    job.update_status(&statuses);
+                    let status = statuses.get(job.remote_id());
+
+                    match status {
+                        Some(st) => job.set_status(st.to_owned()),
+                        None => (),
+                    }
                     if job.status() != &old_status {
                         changed_jobs.push(job.clone());
                     }
                 }
             }
 
-            remote::Job::save_jobs(&jobs)?;
+            Job::save_jobs(&jobs)?;
 
             if changed_jobs.is_empty() {
                 println!("No job status changes.");
@@ -82,52 +94,12 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Mode::Status => {
-            let jobs = remote::Job::load_jobs()?;
-
-            let mut builder = Builder::default();
-            builder.push_record([
-                "Working Dir",
-                "Status",
-                "Synced",
-                "Submit Time",
-                "Project",
-                "Remote",
-                "Remote ID",
-                "ID",
-            ]);
-
-            for job in jobs {
-                let submit_time_str = if let Ok(timestamp) = job.submit_time().parse::<i64>() {
-                    if let Some(datetime) = DateTime::from_timestamp(timestamp, 0) {
-                        datetime
-                            .with_timezone(&Local)
-                            .format("%Y-%m-%d %H:%M:%S")
-                            .to_string()
-                    } else {
-                        "Invalid Timestamp".to_string()
-                    }
-                } else {
-                    "N/A".to_string()
-                };
-
-                builder.push_record(vec![
-                    job.working_dir().to_string_lossy().into_owned(),
-                    format!("{:?}", job.status()),
-                    job.synced().to_string(),
-                    submit_time_str,
-                    job.project().to_owned(),
-                    job.remote().to_string(),
-                    job.remote_id().to_string(),
-                    job.id().to_string(),
-                ]);
-            }
-
-            let mut table = builder.build();
-            table.with(tabled::settings::Style::rounded());
-            println!("{table}");
+            let jobs = Job::load_jobs()?;
+            let table = create_status_table(jobs);
+            println!("{}", table);
         }
         Mode::Sync { job_id } => {
-            let mut jobs = remote::Job::load_jobs()?;
+            let mut jobs = Job::load_jobs()?;
             let mut synced_jobs_count = 0;
 
             // If a specific job_id is provided, sync only that job
@@ -138,18 +110,19 @@ fn main() -> anyhow::Result<()> {
                     .filter(|j| j.id().to_string() == id)
                     .next()
                     .unwrap();
-                let remote_config = config.clone().get_remote(job.remote());
+                let remote = config.get_remote(job.remote());
+                let connection = SshConnection::new(&remote)?;
 
-                // job.set_sync_status(true);
-                job.sync(&remote_config)?;
+                remote.sync(&job, &connection)?;
             } else {
                 for job in jobs.iter_mut() {
-                    if job.status() == &remote::JobStatus::Finished
-                        || job.status() == &remote::JobStatus::Error && !job.synced()
+                    if job.status() == &JobStatus::Finished
+                        || job.status() == &JobStatus::Error && !job.synced()
                     {
                         // If no job_id is provided, sync all unsynced and finished jobs
-                        let remote_config = config.clone().get_remote(job.remote());
-                        job.sync(&remote_config)?;
+                        let remote = config.clone().get_remote(job.remote());
+                        let connection = SshConnection::new(&remote)?;
+                        remote.sync(&job, &connection)?;
                         job.set_synced_status(true);
                         synced_jobs_count += 1;
                     }
@@ -161,9 +134,53 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            remote::Job::save_jobs(&jobs)?;
+            Job::save_jobs(&jobs)?;
         }
     };
 
     Ok(())
+}
+
+fn create_status_table(jobs: Vec<Job>) -> String {
+    let mut builder = Builder::default();
+    builder.push_record([
+        "Working Dir",
+        "Status",
+        "Synced",
+        "Submit Time",
+        "Project",
+        "Remote",
+        "Remote ID",
+        "ID",
+    ]);
+
+    for job in jobs {
+        let submit_time_str = if let Ok(timestamp) = job.submit_time().parse::<i64>() {
+            if let Some(datetime) = DateTime::from_timestamp(timestamp, 0) {
+                datetime
+                    .with_timezone(&Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string()
+            } else {
+                "Invalid Timestamp".to_string()
+            }
+        } else {
+            "N/A".to_string()
+        };
+
+        builder.push_record(vec![
+            job.working_dir().to_string_lossy().into_owned(),
+            format!("{:?}", job.status()),
+            job.synced().to_string(),
+            submit_time_str,
+            job.project().to_owned(),
+            job.remote().to_string(),
+            job.remote_id().to_string(),
+            job.id().to_string(),
+        ]);
+    }
+
+    let mut table = builder.build();
+    table.with(tabled::settings::Style::rounded());
+    table.to_string()
 }
