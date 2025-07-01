@@ -8,6 +8,18 @@ pub struct Config {
     pub work_directory: std::path::PathBuf,
 }
 
+#[derive(thiserror::Error, std::fmt::Debug)]
+pub enum ConfigError {
+    #[error("OS Config directory not found.")]
+    ConfigDirNotFound,
+    #[error("Recli config directory not found.")]
+    RecliConfigDirNotFound,
+    #[error("IO error, {0}")]
+    IO(#[from] std::io::Error),
+    #[error("Error in config.toml file:\n{0}")]
+    MalformedTomlFile(#[from] toml::de::Error),
+}
+
 impl Config {
     pub fn read() -> Result<Self, ConfigError> {
         let config_file = Config::get_dir()?.join("config.toml");
