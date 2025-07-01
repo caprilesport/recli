@@ -40,7 +40,7 @@ enum Mode {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = crate::config::Config::read_config()?;
+    let config = crate::config::Config::read()?;
 
     match cli.mode {
         Mode::Submit { inpfile, remote } => {

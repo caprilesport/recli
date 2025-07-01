@@ -5,12 +5,10 @@ use thiserror;
 pub enum JobError {
     #[error("Not in a recli project folder")]
     NotInAProject,
-    #[error("SSH error")]
+    #[error("SSH error:\n{0}")]
     Ssh(#[from] ssh2::Error),
-    #[error("IO error")]
+    #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    // #[error("Job submission failed with exit code {0}. Output:\n{1}")]
-    // SubmissionFailed(i32, String),
     #[error(
         "Command '{command}' failed with exit code
       {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
@@ -167,11 +165,7 @@ impl Job {
     }
 
     pub fn save_jobs(jobs: &[Job]) -> Result<(), std::io::Error> {
-        let config_dir = dirs::home_dir()
-            .expect("Could not find home directory")
-            .join(".config")
-            .join("recli");
-        std::fs::create_dir_all(&config_dir)?;
+        let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         let file = std::fs::File::create(jobs_file)?;
         serde_json::to_writer_pretty(file, jobs)?;
@@ -179,10 +173,7 @@ impl Job {
     }
 
     pub fn load_jobs() -> Result<Vec<Job>, std::io::Error> {
-        let config_dir = dirs::home_dir()
-            .expect("Could not find home directory")
-            .join(".config")
-            .join("recli");
+        let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         if !jobs_file.exists() {
             return Ok(Vec::new());
