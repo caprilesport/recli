@@ -66,7 +66,7 @@ impl Job {
         basename: String,
     ) -> Result<Self, JobError> {
         let cwd = std::env::current_dir().unwrap();
-        let project = Self::find_project(cwd.clone())?;
+        let project = Self::find_project(&cwd)?;
         let name = Job::get_name(&project, &basename).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -150,16 +150,21 @@ impl Job {
         Ok(parts.join("-"))
     }
 
-    fn find_project(cwd: PathBuf) -> Result<String, JobError> {
-        let project_file: PathBuf = [cwd.clone(), PathBuf::from(".recli")].iter().collect();
+    fn find_project(start_path: &std::path::Path) -> Result<String, JobError> {
+        let mut current_path = start_path;
 
-        if std::path::Path::exists(&project_file) {
-            return Ok(cwd.file_name().unwrap().to_str().unwrap().to_owned());
-        } else {
-            let parent_folder = cwd.parent();
-            match parent_folder {
-                Some(parent) => Self::find_project(parent.to_path_buf()),
-                None => Err(JobError::NotInAProject),
+        loop {
+            if current_path.join(".recli").is_file() {
+                return current_path
+                    .file_name() // Returns Option<&OsStr>
+                    .and_then(|name| name.to_str()) // Converts to
+                    .map(|name_str| name_str.to_owned()) // Converts
+                    .ok_or(JobError::NotInAProject); // Converts
+            }
+
+            match current_path.parent() {
+                Some(parent) => current_path = parent,
+                None => return Err(JobError::NotInAProject),
             }
         }
     }
@@ -254,7 +259,7 @@ mod tests {
     #[test]
     fn test_find_project_not_found() {
         let dir = tempdir().unwrap();
-        let result = Job::find_project(dir.path().to_path_buf());
+        let result = Job::find_project(&dir.path());
         assert!(matches!(result, Err(JobError::NotInAProject)));
     }
 
