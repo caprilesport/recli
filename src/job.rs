@@ -5,12 +5,10 @@ use thiserror;
 pub enum JobError {
     #[error("Not in a recli project folder")]
     NotInAProject,
-    #[error("SSH error")]
+    #[error("SSH error:\n{0}")]
     Ssh(#[from] ssh2::Error),
-    #[error("IO error")]
+    #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    // #[error("Job submission failed with exit code {0}. Output:\n{1}")]
-    // SubmissionFailed(i32, String),
     #[error(
         "Command '{command}' failed with exit code
       {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
