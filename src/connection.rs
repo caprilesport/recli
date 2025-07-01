@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 
-use tracing::{debug, info};
+use tracing::{debug, trace};
 
 /// A trait that defines the actions that can be performed on a remote machine.
 /// This abstraction allows for decoupling the runtime logic from the test logic
@@ -35,9 +35,9 @@ pub struct SshConnection {
 impl SshConnection {
     /// Creates a new SSH connection based on the remote's configuration.
     pub fn new(remote: &Remote) -> Result<Self, JobError> {
-        info!("Connecting to {:?}", remote.name());
+        debug!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
-        debug!("Using {} as target.", target);
+        trace!("Using {} as target.", target);
         let tcp = TcpStream::connect(target)?;
         let mut session = Session::new()?;
         session.set_tcp_stream(tcp);
@@ -51,7 +51,7 @@ impl RemoteConnection for SshConnection {
     fn execute(&self, command: &str) -> Result<String, JobError> {
         let mut channel = self.session.channel_session()?;
         channel.exec(command)?;
-        debug!("Executing {} @ remote", command);
+        trace!("Executing {} @ remote", command);
 
         let mut stdout = String::new();
         channel.read_to_string(&mut stdout)?;
