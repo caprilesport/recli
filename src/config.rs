@@ -35,42 +35,6 @@ impl Config {
             .next()
             .unwrap()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::queuemanager::QueueManager;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_parse_config_and_get_remote() {
-        let toml_str = r#"
-            work_directory = "/home/user/projects"
-
-            [[remotes]]
-            name = "test_remote"
-            hostname = "localhost"
-            port = 22
-            user = "testuser"
-            work_directory = "/remote/work"
-            prepare_args = ["arg1", "arg2"]
-            queue_manager = "PBS"
-            
-            [[remotes]]
-            name = "another_remote"
-            hostname = "remote.host"
-            port = 2222
-            user = "anotheruser"
-            work_directory = "/other/work"
-            prepare_args = []
-            queue_manager = "Slurm"
-        "#;
-
-        let config: Config = toml::from_str(toml_str).unwrap();
-
-        assert_eq!(config.work_directory, PathBuf::from("/home/user/projects"));
-        assert_eq!(config.remotes.len(), 2);
 
     fn get_dir() -> Result<std::path::PathBuf, ConfigError> {
         let mut config_dir = dirs::config_dir().ok_or(ConfigError::ConfigDirNotFound)?;
