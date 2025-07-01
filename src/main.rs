@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use clap_verbosity_flag::LevelFilter;
+use tracing::info;
 
 use std::path::PathBuf;
 use tabled::builder::Builder;
@@ -20,8 +22,8 @@ struct Cli {
     #[command(subcommand)]
     mode: Mode,
     /// Verbosity options.
-    #[clap(flatten)]
-    verbosity: clap_verbosity_flag::Verbosity,
+    #[command(flatten)]
+    verbosity: clap_verbosity_flag::Verbosity<clap_verbosity_flag::InfoLevel>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -40,6 +42,19 @@ enum Mode {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    let loglevel = match cli.verbosity.log_level_filter() {
+        LevelFilter::Off => tracing_subscriber::filter::LevelFilter::OFF,
+        LevelFilter::Warn => tracing_subscriber::filter::LevelFilter::WARN,
+        LevelFilter::Error => tracing_subscriber::filter::LevelFilter::ERROR,
+        LevelFilter::Info => tracing_subscriber::filter::LevelFilter::INFO,
+        LevelFilter::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
+        LevelFilter::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
+    };
+
+    // Initialize the logger with the verbosity level from the CLI.
+    tracing_subscriber::fmt().with_max_level(loglevel).init();
+
     let config = crate::config::Config::read()?;
 
     match cli.mode {
@@ -54,12 +69,13 @@ fn main() -> anyhow::Result<()> {
             jobs.push(job);
             Job::save_jobs(&jobs)?;
 
-            println!(
+            info!(
                 "Job submitted successfully with id: {}. Remote id: {}",
                 id,
                 jobs.last().unwrap().remote_id()
             );
         }
+
         Mode::Fetch => {
             let mut jobs = Job::load_jobs()?;
             let mut changed_jobs = Vec::new();
@@ -84,11 +100,11 @@ fn main() -> anyhow::Result<()> {
             Job::save_jobs(&jobs)?;
 
             if changed_jobs.is_empty() {
-                println!("No job status changes.");
+                info!("No job status changes.");
             } else {
-                println!("Jobs with status changes:");
+                info!("Jobs with status changes:");
                 for job in changed_jobs {
-                    println!("  - Job {}: changed to {:?}", job.id(), job.status());
+                    info!("  - Job {}: changed to {:?}", job.id(), job.status());
                 }
             }
         }
@@ -127,9 +143,9 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 if synced_jobs_count > 0 {
-                    println!("Successfully synced {} job(s).", synced_jobs_count);
+                    info!("Successfully synced {} job(s).", synced_jobs_count);
                 } else {
-                    println!("No finished jobs to sync.");
+                    info!("No finished jobs to sync.");
                 }
             }
 

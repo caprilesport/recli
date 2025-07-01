@@ -7,6 +7,8 @@ use crate::queuemanager::QueueManager;
 use crate::connection::RemoteConnection;
 use std::collections::HashMap;
 
+use tracing::debug;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Remote {
     name: String,
@@ -27,9 +29,10 @@ impl PartialEq<&str> for Remote {
 impl Remote {
     fn prepare(&self, input_file: &std::path::Path) -> Result<(), JobError> {
         let mut args = self.prepare_args.clone();
+        debug!("Running command: {:?}, {:?}", "qprep", args);
         args.push(input_file.to_string_lossy().into_owned());
-        // TODO: when the log level is set, print the output of qprep in log
-        duct::cmd("qprep", args).stdout_capture().run()?;
+        let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
+        debug!("qprep output: {:?}", qprep_output.stdout);
         Ok(())
     }
 
@@ -53,10 +56,10 @@ impl Remote {
         self.work_directory.clone()
     }
 
-    #[cfg(test)]
-    pub fn queue_manager(&self) -> &QueueManager {
-        &self.queue_manager
-    }
+    // #[cfg(test)]
+    // pub fn queue_manager(&self) -> &QueueManager {
+    //     &self.queue_manager
+    // }
 
     pub fn submit(
         &self,
