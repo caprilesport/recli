@@ -28,21 +28,24 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
+    /// Submits a file at the specified remote
     Submit {
         inpfile: PathBuf,
         #[arg(short, long)]
         remote: String,
     },
+    /// Fetch all job changes from the remotes
     Fetch,
-    Sync {
-        job_id: Option<String>,
-    },
+    /// Downloads all files for finished jobs
+    Sync { job_id: Option<String> },
+    /// Displays the status of jobs
     Status,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // Initialize the logger with the verbosity level from the CLI.
     let loglevel = match cli.verbosity.log_level_filter() {
         LevelFilter::Off => tracing_subscriber::filter::LevelFilter::OFF,
         LevelFilter::Warn => tracing_subscriber::filter::LevelFilter::WARN,
@@ -51,8 +54,6 @@ fn main() -> anyhow::Result<()> {
         LevelFilter::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
         LevelFilter::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
     };
-
-    // Initialize the logger with the verbosity level from the CLI.
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
     let config = crate::config::Config::read()?;

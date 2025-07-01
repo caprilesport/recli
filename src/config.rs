@@ -1,6 +1,7 @@
 use crate::remote::Remote;
 use dirs;
 use serde::{Deserialize, Serialize};
+use tracing::trace;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -19,7 +20,9 @@ pub enum ConfigError {
 impl Config {
     pub fn read() -> Result<Self, ConfigError> {
         let config_file = Config::get_dir()?.join("config.toml");
+        trace!("Attempting to read {:?}", config_file);
         let toml_string = std::fs::read_to_string(config_file)?;
+        trace!("Parsing config file");
         let config: Config = toml::from_str(&toml_string)?;
         Ok(config)
     }
