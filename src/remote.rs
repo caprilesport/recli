@@ -114,13 +114,6 @@ impl Remote {
         let output = connection.execute(&command)?;
         Ok(self.queue_manager.status(output))
     }
-
-    pub fn sync(&self, job: &Job, connection: &dyn RemoteConnection) -> Result<(), JobError> {
-        println!("Syncing job {} from remote {}", job.id(), job.remote());
-        let remote_job_dir = self.work_dir().join(job.id().to_string());
-        connection.download_files(&remote_job_dir, job.working_dir(), job.basename())?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

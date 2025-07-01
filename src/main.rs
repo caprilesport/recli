@@ -37,7 +37,7 @@ enum Mode {
     /// Fetch all job changes from the remotes
     Fetch,
     /// Downloads all files for finished jobs
-    Sync { job_id: Option<String> },
+    Sync { job_id: Option<uuid::Uuid> },
     /// Displays the status of jobs
     Status,
 }
@@ -115,42 +115,7 @@ fn main() -> anyhow::Result<()> {
             println!("{}", table);
         }
         Mode::Sync { job_id } => {
-            let mut jobs = Job::load_jobs()?;
-            let mut synced_jobs_count = 0;
-
-            // If a specific job_id is provided, sync only that job
-            if let Some(id) = job_id {
-                // Filter out the jobs
-                let job = jobs
-                    .iter_mut()
-                    .filter(|j| j.id().to_string() == id)
-                    .next()
-                    .unwrap();
-                let remote = config.get_remote(job.remote())?;
-                let connection = SshConnection::new(&remote)?;
-
-                remote.sync(&job, &connection)?;
-            } else {
-                for job in jobs.iter_mut() {
-                    if job.status() == &JobStatus::Finished
-                        || job.status() == &JobStatus::Error && !job.synced()
-                    {
-                        // If no job_id is provided, sync all unsynced and finished jobs
-                        let remote = config.get_remote(job.remote())?;
-                        let connection = SshConnection::new(&remote)?;
-                        remote.sync(&job, &connection)?;
-                        job.set_synced_status(true);
-                        synced_jobs_count += 1;
-                    }
-                }
-                if synced_jobs_count > 0 {
-                    info!("Successfully synced {} job(s).", synced_jobs_count);
-                } else {
-                    info!("No finished jobs to sync.");
-                }
-            }
-
-            Job::save_jobs(&jobs)?;
+            unimplemented!()
         }
     };
 
