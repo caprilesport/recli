@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 
-use chrono::{DateTime, Local};
 use std::path::PathBuf;
 use tabled::builder::Builder;
 
@@ -143,42 +142,18 @@ fn main() -> anyhow::Result<()> {
 
 fn create_status_table(jobs: Vec<Job>) -> String {
     let mut builder = Builder::default();
-    builder.push_record([
-        "Working Dir",
-        "Status",
-        "Synced",
-        "Submit Time",
-        "Project",
-        "Remote",
-        "Remote ID",
-        "ID",
-    ]);
+    builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
 
-    for job in jobs {
-        let submit_time_str = if let Ok(timestamp) = job.submit_time().parse::<i64>() {
-            if let Some(datetime) = DateTime::from_timestamp(timestamp, 0) {
-                datetime
-                    .with_timezone(&Local)
-                    .format("%Y-%m-%d %H:%M:%S")
-                    .to_string()
-            } else {
-                "Invalid Timestamp".to_string()
-            }
-        } else {
-            "N/A".to_string()
-        };
-
+    jobs.iter().for_each(|j| {
         builder.push_record(vec![
-            job.working_dir().to_string_lossy().into_owned(),
-            format!("{:?}", job.status()),
-            job.synced().to_string(),
-            submit_time_str,
-            job.project().to_owned(),
-            job.remote().to_string(),
-            job.remote_id().to_string(),
-            job.id().to_string(),
-        ]);
-    }
+            j.name(),
+            j.project(),
+            j.status().as_str(),
+            &j.synced().to_string(),
+            j.remote(),
+            j.remote_id(),
+        ])
+    });
 
     let mut table = builder.build();
     table.with(tabled::settings::Style::rounded());
