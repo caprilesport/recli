@@ -48,6 +48,7 @@ mod uuid_as_string {
 pub struct Job {
     #[serde(with = "uuid_as_string")]
     id: uuid::Uuid,
+    name: String,
     remote: String,
     remote_id: String,
     basename: String,
@@ -68,6 +69,7 @@ impl Job {
     ) -> Result<Self, JobError> {
         let cwd = std::env::current_dir().unwrap();
         let project = Self::find_project(cwd.clone())?;
+        let name = Job::get_name(&project, &basename).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -75,6 +77,7 @@ impl Job {
 
         Ok(Self {
             id,
+            name,
             remote,
             remote_id,
             basename,
@@ -95,9 +98,9 @@ impl Job {
         &self.remote_id
     }
 
-    pub fn submit_time(&self) -> &str {
-        &self.submit_time
-    }
+    // pub fn submit_time(&self) -> &str {
+    //     &self.submit_time
+    // }
 
     pub fn working_dir(&self) -> &PathBuf {
         &self.working_dir
@@ -129,6 +132,24 @@ impl Job {
 
     pub fn basename(&self) -> &str {
         &self.basename
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_name(project: &str, _basename: &str) -> std::io::Result<String> {
+        let cwd = std::env::current_dir()?;
+
+        let parts: Vec<String> = cwd
+            .iter()
+            .skip_while(|part| *part != std::ffi::OsStr::new(&project))
+            .skip(1)
+            .filter_map(|s| s.to_str().map(String::from))
+            .collect();
+
+        // parts.push(basename.to_owned());
+        Ok(parts.join("-"))
     }
 
     fn find_project(cwd: PathBuf) -> Result<String, JobError> {
@@ -189,6 +210,18 @@ pub enum JobStatus {
     Undefined,
 }
 
+impl JobStatus {
+    pub fn as_str(&self) -> &'static str {
+        match &self {
+            Self::Queued => "Q",
+            Self::Finished => "F",
+            Self::Error => "E",
+            Self::Running => "R",
+            Self::Undefined => "U",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,6 +270,7 @@ mod tests {
         let job_id = Uuid::new_v4();
         let job = Job {
             id: job_id,
+            name: "test_name".to_string(),
             remote: "test_remote".to_string(),
             remote_id: "12345".to_string(),
             basename: "test_job".to_string(),
