@@ -1,7 +1,6 @@
 use crate::remote::Remote;
+use dirs;
 use serde::{Deserialize, Serialize};
-
-const CONFIG_NAME: &str = "/home/vport/.config/recli/config.toml";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -10,8 +9,9 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn read_config() -> anyhow::Result<Self> {
-        let toml_string = std::fs::read_to_string(&CONFIG_NAME)?;
+    pub fn read() -> Result<Self, ConfigError> {
+        let config_file = Config::get_dir()?.join("config.toml");
+        let toml_string = std::fs::read_to_string(config_file)?;
         let config: Config = toml::from_str(&toml_string)?;
         Ok(config)
     }
@@ -60,12 +60,13 @@ mod tests {
         assert_eq!(config.work_directory, PathBuf::from("/home/user/projects"));
         assert_eq!(config.remotes.len(), 2);
 
-        let remote = config.get_remote("test_remote");
-        assert_eq!(remote.name(), "test_remote");
-        assert_eq!(remote.hostname(), "localhost");
-        assert_eq!(remote.port(), 22);
-        assert_eq!(remote.user(), "testuser");
-        assert_eq!(remote.work_dir(), PathBuf::from("/remote/work"));
-        assert_eq!(remote.queue_manager(), &QueueManager::PBS);
+    fn get_dir() -> Result<std::path::PathBuf, ConfigError> {
+        let mut config_dir = dirs::config_dir().ok_or(ConfigError::ConfigDirNotFound)?;
+        config_dir.push("recli");
+        if config_dir.exists() {
+            Ok(config_dir)
+        } else {
+            Err(ConfigError::RecliConfigDirNotFound)
+        }
     }
 }
