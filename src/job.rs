@@ -165,6 +165,7 @@ impl Job {
     }
 
     pub fn save_jobs(jobs: &[Job]) -> Result<(), std::io::Error> {
+        tracing::debug!("Saving jobs to CONFIG_DIR/jobs.json");
         let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         let file = std::fs::File::create(jobs_file)?;
@@ -173,6 +174,7 @@ impl Job {
     }
 
     pub fn load_jobs() -> Result<Vec<Job>, std::io::Error> {
+        tracing::debug!("Loading jobs from CONFIG_DIR/jobs.json");
         let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         if !jobs_file.exists() {
