@@ -1,13 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::job::{Job, JobError, JobStatus};
+use crate::connection::RemoteConnection;
+use crate::job::JobStatus;
 use crate::queuemanager::QueueManager;
 
-use crate::connection::RemoteConnection;
 use std::collections::HashMap;
 
 use tracing::debug;
+
+#[derive(thiserror::Error, std::fmt::Debug)]
+pub enum Error {
+    #[error("Connection error:\n{0}")]
+    ConnectionError(#[from] crate::connection::Error),
+    #[error("{0}")]
+    IO(#[from] std::io::Error), // #[error()]
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Remote {
@@ -27,7 +35,7 @@ impl PartialEq<&str> for Remote {
 }
 
 impl Remote {
-    fn prepare(&self, input_file: &std::path::Path) -> Result<(), JobError> {
+    fn prepare(&self, input_file: &std::path::Path) -> Result<(), Error> {
         let mut args = self.prepare_args.clone();
         debug!("Running command: {:?}, {:?}", "qprep", args);
         args.push(input_file.to_string_lossy().into_owned());
@@ -61,17 +69,18 @@ impl Remote {
     //     &self.queue_manager
     // }
 
+    /// Submits an inp_file to the remote with the specified job_id.
+    /// Returns a remote id
     pub fn submit(
         &self,
         job_id: uuid::Uuid,
         inp_file: &Path,
         connection: &dyn RemoteConnection,
-    ) -> Result<Job, JobError> {
+    ) -> Result<String, Error> {
         self.prepare(inp_file)?;
 
         let remote_dir = self.work_dir().join(job_id.to_string());
         connection.mkdir(&remote_dir)?;
-
         let file_stem = inp_file.file_stem().unwrap().to_str().unwrap();
 
         let files_to_send: Vec<PathBuf> = std::fs::read_dir(".")?
@@ -98,18 +107,13 @@ impl Remote {
         let output = connection.execute(&command)?;
         let remote_id = self.queue_manager.get_id(output);
 
-        Job::new(
-            job_id,
-            self.name().to_string(),
-            remote_id,
-            file_stem.to_string(),
-        )
+        Ok(remote_id)
     }
 
     pub fn status(
         &self,
         connection: &dyn RemoteConnection,
-    ) -> Result<HashMap<String, JobStatus>, JobError> {
+    ) -> Result<HashMap<String, JobStatus>, Error> {
         let command = self.queue_manager.status_command(self.user());
         let output = connection.execute(&command)?;
         Ok(self.queue_manager.status(output))
@@ -120,7 +124,7 @@ impl Remote {
 mod tests {
     use super::*;
     use crate::connection::RemoteConnection;
-    use crate::job::{JobError, JobStatus};
+    use crate::job::JobStatus;
     use crate::queuemanager::QueueManager;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -145,7 +149,7 @@ mod tests {
     }
 
     impl RemoteConnection for MockConnection {
-        fn execute(&self, command: &str) -> Result<String, JobError> {
+        fn execute(&self, command: &str) -> Result<String, crate::connection::Error> {
             self.commands.borrow_mut().push(command.to_string());
             if let Some(output) = self.mock_output.borrow().get(command) {
                 Ok(output.clone())
@@ -154,11 +158,15 @@ mod tests {
             }
         }
 
-        fn mkdir(&self, _path: &Path) -> Result<(), JobError> {
+        fn mkdir(&self, _path: &Path) -> Result<(), crate::connection::Error> {
             Ok(())
         }
 
-        fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), JobError> {
+        fn upload_files(
+            &self,
+            local_paths: &[PathBuf],
+            remote_dir: &Path,
+        ) -> Result<(), crate::connection::Error> {
             self.uploads
                 .borrow_mut()
                 .push((local_paths.to_vec(), remote_dir.to_path_buf()));
@@ -170,7 +178,7 @@ mod tests {
             remote_dir: &Path,
             local_dir: &Path,
             basename: &str,
-        ) -> Result<(), JobError> {
+        ) -> Result<(), crate::connection::Error> {
             self.downloads.borrow_mut().push((
                 remote_dir.to_path_buf(),
                 local_dir.to_path_buf(),

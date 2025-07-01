@@ -1,24 +1,19 @@
 use std::path::PathBuf;
 use thiserror;
+use uuid::Uuid;
+
+use std::ops::{Deref, DerefMut};
+
+use tracing::info;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
-pub enum JobError {
+pub enum Error {
     #[error("Not in a recli project folder")]
     NotInAProject,
-    #[error("SSH error:\n{0}")]
-    Ssh(#[from] ssh2::Error),
+    #[error("Connection error:\n{0}")]
+    Ssh(#[from] crate::connection::Error),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    #[error(
-        "Command '{command}' failed with exit code
-      {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
-    )]
-    CommandFailed {
-        command: String,
-        exit_code: i32,
-        stdout: String,
-        stderr: String,
-    },
 }
 
 // Helper module for UUID serialization
@@ -45,7 +40,7 @@ mod uuid_as_string {
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
     #[serde(with = "uuid_as_string")]
-    id: uuid::Uuid,
+    id: Uuid,
     name: String,
     remote: String,
     remote_id: String,
@@ -60,11 +55,11 @@ pub struct Job {
 
 impl Job {
     pub fn new(
-        id: uuid::Uuid,
+        id: Uuid,
         remote: String,
         remote_id: String,
         basename: String,
-    ) -> Result<Self, JobError> {
+    ) -> Result<Self, Error> {
         let cwd = std::env::current_dir().unwrap();
         let project = Self::find_project(&cwd)?;
         let name = Job::get_name(&project, &basename).unwrap();
@@ -88,7 +83,7 @@ impl Job {
         })
     }
 
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &Uuid {
         &self.id
     }
 
@@ -150,7 +145,7 @@ impl Job {
         Ok(parts.join("-"))
     }
 
-    fn find_project(start_path: &std::path::Path) -> Result<String, JobError> {
+    fn find_project(start_path: &std::path::Path) -> Result<String, Error> {
         let mut current_path = start_path;
 
         loop {
@@ -302,7 +297,7 @@ mod tests {
     fn test_find_project_not_found() {
         let dir = tempdir().unwrap();
         let result = Job::find_project(&dir.path());
-        assert!(matches!(result, Err(JobError::NotInAProject)));
+        assert!(matches!(result, Err(Error::NotInAProject)));
     }
 
     #[test]

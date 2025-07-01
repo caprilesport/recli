@@ -62,19 +62,27 @@ fn main() -> anyhow::Result<()> {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
             let remote = config.get_remote(&remote)?;
+            let file_stem = inpfile.file_stem().unwrap().to_str().unwrap();
+
             let connection = SshConnection::new(&remote)?;
+            let remote_id = remote.submit(id, &inpfile, &connection)?;
 
-            let job = remote.submit(id, &inpfile, &connection)?;
-
-            let mut jobs = Job::load_jobs()?;
-            jobs.push(job);
-            Job::save_jobs(&jobs)?;
+            let job = Job::new(
+                id,
+                remote.name().to_owned(),
+                remote_id,
+                file_stem.to_owned(),
+            )?;
+            let mut jobs = Jobs::load_jobs()?;
 
             info!(
                 "Job submitted successfully with id: {}. Remote id: {}",
                 id,
-                jobs.last().unwrap().remote_id()
+                &job.remote_id()
             );
+
+            jobs.add(job);
+            jobs.save_jobs()?;
         }
 
         Mode::Fetch => {
