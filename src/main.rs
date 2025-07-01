@@ -3,10 +3,9 @@ use clap_verbosity_flag::LevelFilter;
 use tracing::info;
 
 use std::path::PathBuf;
-use tabled::builder::Builder;
 
 use connection::SshConnection;
-use job::{Job, JobStatus};
+use job::{Job, JobStatus, Jobs};
 
 mod config;
 mod connection;
