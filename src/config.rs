@@ -15,6 +15,8 @@ pub enum ConfigError {
     IO(#[from] std::io::Error),
     #[error("Error in config.toml file:\n{0}")]
     MalformedTomlConfig(#[from] toml::de::Error),
+    #[error("Remote {0} not found in config file")]
+    RemoteNotFound(String),
 }
 
 impl Config {
@@ -27,12 +29,12 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_remote(self, remote: &str) -> Remote {
+    pub fn get_remote(&self, remote: &str) -> Result<&Remote, ConfigError> {
         self.remotes
-            .into_iter()
+            .iter()
             .filter(|r| r.name() == remote)
             .next()
-            .unwrap()
+            .ok_or(ConfigError::RemoteNotFound(remote.to_string()))
     }
 
     pub fn get_dir() -> std::io::Result<std::path::PathBuf> {
