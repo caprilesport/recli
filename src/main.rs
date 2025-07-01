@@ -61,7 +61,7 @@ fn main() -> anyhow::Result<()> {
     match cli.mode {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
-            let remote = config.get_remote(&remote);
+            let remote = config.get_remote(&remote)?;
             let connection = SshConnection::new(&remote)?;
 
             let job = remote.submit(id, &inpfile, &connection)?;
@@ -126,7 +126,7 @@ fn main() -> anyhow::Result<()> {
                     .filter(|j| j.id().to_string() == id)
                     .next()
                     .unwrap();
-                let remote = config.get_remote(job.remote());
+                let remote = config.get_remote(job.remote())?;
                 let connection = SshConnection::new(&remote)?;
 
                 remote.sync(&job, &connection)?;
@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
                         || job.status() == &JobStatus::Error && !job.synced()
                     {
                         // If no job_id is provided, sync all unsynced and finished jobs
-                        let remote = config.clone().get_remote(job.remote());
+                        let remote = config.get_remote(job.remote())?;
                         let connection = SshConnection::new(&remote)?;
                         remote.sync(&job, &connection)?;
                         job.set_synced_status(true);
