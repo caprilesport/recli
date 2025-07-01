@@ -159,36 +159,78 @@ impl Job {
                     .file_name() // Returns Option<&OsStr>
                     .and_then(|name| name.to_str()) // Converts to
                     .map(|name_str| name_str.to_owned()) // Converts
-                    .ok_or(JobError::NotInAProject); // Converts
+                    .ok_or(Error::NotInAProject); // Converts
             }
 
             match current_path.parent() {
                 Some(parent) => current_path = parent,
-                None => return Err(JobError::NotInAProject),
+                None => return Err(Error::NotInAProject),
             }
         }
     }
+}
 
-    pub fn save_jobs(jobs: &[Job]) -> Result<(), std::io::Error> {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy)]
+pub enum JobStatus {
+    Queued,
+    Running,
+    Finished,
+    Error,
+    Undefined,
+}
+
+impl JobStatus {
+    pub fn as_str(&self) -> &'static str {
+        match &self {
+            Self::Queued => "Q",
+            Self::Finished => "F",
+            Self::Error => "E",
+            Self::Running => "R",
+            Self::Undefined => "U",
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Jobs {
+    jobs: Vec<Job>,
+}
+
+impl Deref for Jobs {
+    type Target = Vec<Job>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.jobs
+    }
+}
+
+impl DerefMut for Jobs {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.jobs
+    }
+}
+
+impl Jobs {
+    pub fn save_jobs(&self) -> Result<(), std::io::Error> {
         tracing::debug!("Saving jobs to CONFIG_DIR/jobs.json");
         let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         let file = std::fs::File::create(jobs_file)?;
-        serde_json::to_writer_pretty(file, jobs)?;
+        serde_json::to_writer_pretty(file, &self.jobs)?;
         Ok(())
     }
 
-    pub fn load_jobs() -> Result<Vec<Job>, std::io::Error> {
+    pub fn load_jobs() -> Result<Self, std::io::Error> {
         tracing::debug!("Loading jobs from CONFIG_DIR/jobs.json");
         let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         if !jobs_file.exists() {
-            return Ok(Vec::new());
+            return Ok(Jobs { jobs: Vec::new() });
         }
 
         let file = std::fs::File::open(&jobs_file)?;
         if file.metadata()?.len() == 0 {
-            return Ok(Vec::new());
+            return Ok(Jobs { jobs: Vec::new() });
         }
 
         let file = std::fs::File::open(jobs_file)?;

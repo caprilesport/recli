@@ -78,40 +78,19 @@ fn main() -> anyhow::Result<()> {
         }
 
         Mode::Fetch => {
-            let mut jobs = Job::load_jobs()?;
-            let mut changed_jobs = Vec::new();
+            let mut jobs = Jobs::load_jobs()?;
 
             for remote in config.remotes {
                 let connection = SshConnection::new(&remote)?;
                 let statuses = remote.status(&connection)?;
-                for job in jobs.iter_mut() {
-                    let old_status = job.status().clone();
-                    let status = statuses.get(job.remote_id());
-
-                    match status {
-                        Some(st) => job.set_status(st.to_owned()),
-                        None => (),
-                    }
-                    if job.status() != &old_status {
-                        changed_jobs.push(job.clone());
-                    }
-                }
+                jobs.update(statuses);
             }
 
-            Job::save_jobs(&jobs)?;
-
-            if changed_jobs.is_empty() {
-                info!("No job status changes.");
-            } else {
-                info!("Jobs with status changes:");
-                for job in changed_jobs {
-                    info!("  - Job {}: changed to {:?}", job.id(), job.status());
-                }
-            }
+            jobs.save_jobs()?;
         }
         Mode::Status => {
-            let jobs = Job::load_jobs()?;
-            let table = create_status_table(jobs);
+            let jobs = Jobs::load_jobs()?;
+            let table = jobs.create_status_table();
             println!("{}", table);
         }
         Mode::Sync { job_id } => {
@@ -120,24 +99,4 @@ fn main() -> anyhow::Result<()> {
     };
 
     Ok(())
-}
-
-fn create_status_table(jobs: Vec<Job>) -> String {
-    let mut builder = Builder::default();
-    builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
-
-    jobs.iter().for_each(|j| {
-        builder.push_record(vec![
-            j.name(),
-            j.project(),
-            j.status().as_str(),
-            &j.synced().to_string(),
-            j.remote(),
-            j.remote_id(),
-        ])
-    });
-
-    let mut table = builder.build();
-    table.with(tabled::settings::Style::rounded());
-    table.to_string()
 }
