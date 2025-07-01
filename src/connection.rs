@@ -5,10 +5,10 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 
+use tracing::{debug, info};
+
 /// A trait that defines the actions that can be performed on a remote machine.
-/// This abstraction allows for decoupling the business logic from the specific
-/// implementation of the remote operations (e.g., SSH, local Docker, etc.),
-/// which makes the code more testable and flexible.
+/// This abstraction allows for decoupling the runtime logic from the test logic
 pub trait RemoteConnection {
     /// Executes a command on the remote and returns its stdout.
     fn execute(&self, command: &str) -> Result<String, JobError>;
@@ -28,7 +28,6 @@ pub trait RemoteConnection {
     ) -> Result<(), JobError>;
 }
 
-/// The "real" implementation of the `RemoteConnection` trait that uses SSH.
 pub struct SshConnection {
     session: Session,
 }
@@ -36,7 +35,9 @@ pub struct SshConnection {
 impl SshConnection {
     /// Creates a new SSH connection based on the remote's configuration.
     pub fn new(remote: &Remote) -> Result<Self, JobError> {
+        info!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
+        debug!("Using {} as target.", target);
         let tcp = TcpStream::connect(target)?;
         let mut session = Session::new()?;
         session.set_tcp_stream(tcp);
@@ -50,6 +51,7 @@ impl RemoteConnection for SshConnection {
     fn execute(&self, command: &str) -> Result<String, JobError> {
         let mut channel = self.session.channel_session()?;
         channel.exec(command)?;
+        debug!("Executing {} @ remote", command);
 
         let mut stdout = String::new();
         channel.read_to_string(&mut stdout)?;
@@ -73,6 +75,7 @@ impl RemoteConnection for SshConnection {
     }
 
     fn mkdir(&self, path: &Path) -> Result<(), JobError> {
+        debug!("Creating directory {:?} @ remote", path);
         let sftp = self.session.sftp()?;
         sftp.mkdir(path, 0o755)?;
         Ok(())
@@ -81,6 +84,7 @@ impl RemoteConnection for SshConnection {
     fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), JobError> {
         let sftp = self.session.sftp()?;
         for file_path in local_paths {
+            debug!("Uploading {:?} to {:?}", file_path, remote_dir);
             let mut local_file = std::fs::File::open(file_path)?;
             let remote_path = remote_dir.join(file_path.file_name().unwrap());
             let mut remote_file = sftp.create(remote_path.as_path())?;
@@ -108,6 +112,7 @@ impl RemoteConnection for SshConnection {
                 let local_path = local_dir.join(remote_path.file_name().unwrap());
                 let mut remote_file = sftp.open(&remote_path)?;
                 let mut local_file = std::fs::File::create(&local_path)?;
+                debug!("Downloading {:?}", remote_path);
                 std::io::copy(&mut remote_file, &mut local_file)?;
             }
         }
