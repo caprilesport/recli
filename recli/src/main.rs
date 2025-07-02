@@ -1,15 +1,9 @@
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::LevelFilter;
-use tracing::info;
-
-use std::path::PathBuf;
 
 use crate::config::Config;
 
-use remotelib::connection::SshConnection;
-use remotelib::job::Job;
-use remotelib::jobs::Jobs;
-
+mod commands;
 mod config;
 
 #[derive(Parser, Debug)]

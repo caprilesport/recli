@@ -2,7 +2,6 @@ use crate::job::{Error, Job, JobStatus};
 use std::collections::HashMap;
 // use std::io::Error;
 use std::ops::{Deref, DerefMut};
-use tabled::builder::Builder;
 use tracing::info;
 use uuid::Uuid;
 
