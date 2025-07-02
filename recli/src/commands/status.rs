@@ -5,17 +5,21 @@ use remotelib::job::Job;
 use remotelib::jobs::{Jobs, Match};
 
 #[derive(Debug, clap::Args)]
+/// Displays the status of jobs, with optional filters.
+///
+/// Shows a table of all tracked jobs. You can use the flags below to filter
+/// the jobs that are displayed.
 pub struct Args {
     /// Filter by id
-    #[arg(long)]
+    #[arg(long, short)]
     pub id: Option<Uuid>,
 
     /// Filter by name
-    #[arg(long)]
+    #[arg(long, short)]
     pub name: Option<String>,
 
     /// Filter by remote
-    #[arg(long)]
+    #[arg(long, short)]
     pub remote: Option<String>,
 
     /// Filter by remote_id
@@ -23,15 +27,15 @@ pub struct Args {
     pub remote_id: Option<String>,
 
     /// Filter by basename
-    #[arg(long)]
+    #[arg(long, short)]
     pub basename: Option<String>,
 
     /// Filter by project
-    #[arg(long)]
+    #[arg(long, short)]
     pub project: Option<String>,
 
     /// Filter by status
-    #[arg(long, value_enum)]
+    #[arg(long, short, value_enum)]
     pub status: Option<remotelib::job::JobStatus>,
 
     /// Filter by synced status

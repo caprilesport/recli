@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Debug, clap::Args)]
+/// Submits a job to a specified remote machine.
+///
+/// This command prepares the necessary job files, uploads them to the remote's
+/// working directory, and submits the job to the queue manager.
 pub struct Args {
     inpfile: PathBuf,
     #[arg(short, long)]

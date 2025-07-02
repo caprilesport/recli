@@ -7,7 +7,12 @@ mod commands;
 mod config;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "A remote job submission and management CLI.")]
+#[command(
+    long_about = "recli is a tool designed to simplify the process of submitting, \
+    monitoring, and retrieving files from jobs running on remote high-performance \
+    computing (HPC) clusters or servers."
+)]
 #[command(propagate_version = true)]
 #[command(arg_required_else_help = true)]
 struct Cli {
@@ -20,13 +25,13 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    /// Submits a file at the specified remote
-    Submit(commands::submit::Args),
-    /// Fetch all job changes from the remotes
+    /// Fetches the latest status for all tracked jobs from the remotes.
+    ///
+    /// This command connects to each configured remote, queries the queue manager
+    /// for the current status of your jobs, and updates the local job cache.
     Fetch,
-    /// Downloads all files for finished jobs
+    Submit(commands::submit::Args),
     Sync(commands::sync::Args),
-    /// Displays the status of jobs with optional filters
     Status(commands::status::Args),
 }
 

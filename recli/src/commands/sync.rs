@@ -4,6 +4,13 @@ use remotelib::jobs::Jobs;
 use tracing::info;
 
 #[derive(clap::Args, Debug)]
+/// Downloads output files for finished jobs.
+///
+/// By default, this command finds all jobs that have a 'Finished' status but
+/// have not yet been synced, and downloads their output files.
+///
+/// You can also specify a single job ID to sync only that job, regardless of
+/// its current status.
 pub struct Args {
     job_id: Option<uuid::Uuid>,
     #[arg(short, long)]
