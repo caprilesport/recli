@@ -3,3 +3,5 @@ members = [
     "recli",
     "remotelib",
 ]
+
+resolver = "3"
