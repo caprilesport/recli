@@ -125,45 +125,18 @@ impl Jobs {
         JobQuery::new(&self.jobs)
     }
 
-    pub fn create_status_table(&self) -> String {
-        let mut builder = Builder::default();
-        builder.push_record([
-            "Name",
-            "Project",
-            "St",
-            "Synced",
-            "Remote",
-            "Remote ID",
-            "ID",
-        ]);
-
-        self.jobs.iter().for_each(|j| {
-            builder.push_record(vec![
-                j.name(),
-                j.project(),
-                j.status().as_str(),
-                &j.synced().to_string(),
-                j.remote(),
-                j.remote_id(),
-                &j.id().to_string(),
-            ])
-        });
-
-        let mut table = builder.build();
-        table.with(tabled::settings::Style::rounded());
-        table.to_string()
-    }
-
     pub fn add(&mut self, job: Job) {
         self.jobs.push(job);
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum Match<'a> {
     Exact(&'a str),
     Contains(&'a str),
 }
 
+#[derive(Copy, Clone)]
 pub struct JobQuery<'a> {
     jobs: &'a [Job],
     id: Option<&'a Uuid>,

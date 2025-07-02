@@ -166,7 +166,7 @@ impl Job {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy, clap::ValueEnum)]
 pub enum JobStatus {
     Queued,
     Running,
