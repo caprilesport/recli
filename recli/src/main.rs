@@ -21,21 +21,27 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Mode {
     /// Submits a file at the specified remote
-    Submit {
-        inpfile: PathBuf,
-        #[arg(short, long)]
-        remote: String,
-    },
+    Submit(commands::submit::Args),
     /// Fetch all job changes from the remotes
     Fetch,
     /// Downloads all files for finished jobs
-    Sync {
-        job_id: Option<uuid::Uuid>,
-        #[arg(short, long)]
-        update_status: bool,
-    },
-    /// Displays the status of jobs
-    Status,
+    Sync(commands::sync::Args),
+    /// Displays the status of jobs with optional filters
+    Status(commands::status::Args),
+}
+
+struct Context {
+    config: crate::Config,
+    json_file: std::path::PathBuf,
+}
+
+impl Context {
+    fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            config: Config::read()?,
+            json_file: Config::get_dir()?.join("jobs.json"),
+        })
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,85 +58,13 @@ fn main() -> anyhow::Result<()> {
     };
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
-    let config = Config::read()?;
-    let json_file = Config::get_dir()?.join("jobs.json");
+    let ctx = Context::new()?;
 
     match cli.mode {
-        Mode::Submit { inpfile, remote } => {
-            let id = uuid::Uuid::new_v4();
-            let remote = config.get_remote(&remote)?;
-            let file_stem = inpfile.file_stem().unwrap().to_str().unwrap();
-
-            let connection = SshConnection::new(&remote)?;
-            let remote_id = remote.submit(id, &inpfile, &connection)?;
-
-            let job = Job::new(
-                id,
-                remote.name().to_owned(),
-                remote_id,
-                file_stem.to_owned(),
-            )?;
-            let mut jobs = Jobs::load_jobs(&json_file)?;
-
-            info!(
-                "Job submitted successfully with id: {}. Remote id: {}",
-                id,
-                &job.remote_id()
-            );
-
-            jobs.add(job);
-            jobs.save_jobs(&json_file)?;
-        }
-
-        Mode::Fetch => {
-            let mut jobs = Jobs::load_jobs(&json_file)?;
-
-            for remote in config.remotes {
-                let connection = SshConnection::new(&remote)?;
-                let statuses = remote.status(&connection)?;
-                jobs.update(statuses, remote.name());
-            }
-
-            jobs.save_jobs(&json_file)?;
-        }
-        Mode::Status => {
-            let jobs = Jobs::load_jobs(&json_file)?;
-            let table = jobs.create_status_table();
-            println!("{}", table);
-        }
-        Mode::Sync {
-            job_id,
-            update_status,
-        } => {
-            let mut jobs = Jobs::load_jobs(&json_file)?;
-
-            match job_id {
-                Some(id) => {
-                    if let Some(job) = jobs.find_by_id(&id) {
-                        let remote = config.get_remote(job.remote())?;
-                        let connection = SshConnection::new(&remote)?;
-                        jobs.sync_job(&id, &remote, &connection, update_status)?;
-                    } else {
-                        return Err(anyhow::anyhow!(remotelib::job::Error::JobNotFound(id)));
-                    }
-                }
-                None => {
-                    let syncable_jobs = jobs.syncable();
-
-                    if syncable_jobs.is_empty() {
-                        info!("No jobs to sync")
-                    } else {
-                        for (remote_name, ids) in syncable_jobs {
-                            let remote = config.get_remote(&remote_name)?;
-                            let connection = SshConnection::new(&remote)?;
-                            for id in ids {
-                                jobs.sync_job(&id, &remote, &connection, update_status)?;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        Mode::Submit(args) => commands::submit::execute(args, &ctx)?,
+        Mode::Fetch => commands::fetch::execute(&ctx)?,
+        Mode::Status(args) => commands::status::execute(args, &ctx)?,
+        Mode::Sync(args) => commands::sync::execute(args, &ctx)?,
     };
 
     Ok(())
