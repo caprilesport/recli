@@ -4,16 +4,13 @@ use tracing::info;
 
 use std::path::PathBuf;
 
-use connection::SshConnection;
-use job::Job;
-use jobs::Jobs;
+use crate::config::Config;
+
+use remotelib::connection::SshConnection;
+use remotelib::job::Job;
+use remotelib::jobs::Jobs;
 
 mod config;
-mod connection;
-mod job;
-mod jobs;
-mod queuemanager;
-mod remote;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -61,7 +58,8 @@ fn main() -> anyhow::Result<()> {
     };
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
-    let config = crate::config::Config::read()?;
+    let config = Config::read()?;
+    let config_dir = Config::get_dir()?;
 
     match cli.mode {
         Mode::Submit { inpfile, remote } => {
@@ -78,7 +76,7 @@ fn main() -> anyhow::Result<()> {
                 remote_id,
                 file_stem.to_owned(),
             )?;
-            let mut jobs = Jobs::load_jobs()?;
+            let mut jobs = Jobs::load_jobs(&config_dir)?;
 
             info!(
                 "Job submitted successfully with id: {}. Remote id: {}",
@@ -87,11 +85,11 @@ fn main() -> anyhow::Result<()> {
             );
 
             jobs.add(job);
-            jobs.save_jobs()?;
+            jobs.save_jobs(&config_dir)?;
         }
 
         Mode::Fetch => {
-            let mut jobs = Jobs::load_jobs()?;
+            let mut jobs = Jobs::load_jobs(&config_dir)?;
 
             for remote in config.remotes {
                 let connection = SshConnection::new(&remote)?;
@@ -99,10 +97,10 @@ fn main() -> anyhow::Result<()> {
                 jobs.update(statuses, remote.name());
             }
 
-            jobs.save_jobs()?;
+            jobs.save_jobs(&config_dir)?;
         }
         Mode::Status => {
-            let jobs = Jobs::load_jobs()?;
+            let jobs = Jobs::load_jobs(&config_dir)?;
             let table = jobs.create_status_table();
             println!("{}", table);
         }
@@ -110,7 +108,7 @@ fn main() -> anyhow::Result<()> {
             job_id,
             update_status,
         } => {
-            let mut jobs = Jobs::load_jobs()?;
+            let mut jobs = Jobs::load_jobs(&config_dir)?;
 
             match job_id {
                 Some(id) => {
@@ -119,7 +117,7 @@ fn main() -> anyhow::Result<()> {
                         let connection = SshConnection::new(&remote)?;
                         jobs.sync_job(&id, &remote, &connection, update_status)?;
                     } else {
-                        return Err(anyhow::anyhow!(crate::job::Error::JobNotFound(id)));
+                        return Err(anyhow::anyhow!(remotelib::job::Error::JobNotFound(id)));
                     }
                 }
                 None => {

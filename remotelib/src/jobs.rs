@@ -26,18 +26,16 @@ impl DerefMut for Jobs {
 }
 
 impl Jobs {
-    pub fn save_jobs(&self) -> Result<(), Error> {
+    pub fn save_jobs(&self, config_dir: &std::path::Path) -> Result<(), Error> {
         tracing::debug!("Saving jobs to CONFIG_DIR/jobs.json");
-        let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         let file = std::fs::File::create(jobs_file)?;
         serde_json::to_writer_pretty(file, &self.jobs)?;
         Ok(())
     }
 
-    pub fn load_jobs() -> Result<Self, Error> {
+    pub fn load_jobs(config_dir: &std::path::Path) -> Result<Self, Error> {
         tracing::debug!("Loading jobs from CONFIG_DIR/jobs.json");
-        let config_dir = crate::config::Config::get_dir()?;
         let jobs_file = config_dir.join("jobs.json");
         if !jobs_file.exists() {
             return Ok(Jobs { jobs: Vec::new() });

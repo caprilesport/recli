@@ -1,5 +1,5 @@
-use crate::remote::Remote;
 use dirs;
+use remotelib::remote::Remote;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
