@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
     let config = Config::read()?;
-    let config_dir = Config::get_dir()?;
+    let json_file = Config::get_dir()?.join("jobs.json");
 
     match cli.mode {
         Mode::Submit { inpfile, remote } => {
@@ -76,7 +76,7 @@ fn main() -> anyhow::Result<()> {
                 remote_id,
                 file_stem.to_owned(),
             )?;
-            let mut jobs = Jobs::load_jobs(&config_dir)?;
+            let mut jobs = Jobs::load_jobs(&json_file)?;
 
             info!(
                 "Job submitted successfully with id: {}. Remote id: {}",
@@ -85,11 +85,11 @@ fn main() -> anyhow::Result<()> {
             );
 
             jobs.add(job);
-            jobs.save_jobs(&config_dir)?;
+            jobs.save_jobs(&json_file)?;
         }
 
         Mode::Fetch => {
-            let mut jobs = Jobs::load_jobs(&config_dir)?;
+            let mut jobs = Jobs::load_jobs(&json_file)?;
 
             for remote in config.remotes {
                 let connection = SshConnection::new(&remote)?;
@@ -97,10 +97,10 @@ fn main() -> anyhow::Result<()> {
                 jobs.update(statuses, remote.name());
             }
 
-            jobs.save_jobs(&config_dir)?;
+            jobs.save_jobs(&json_file)?;
         }
         Mode::Status => {
-            let jobs = Jobs::load_jobs(&config_dir)?;
+            let jobs = Jobs::load_jobs(&json_file)?;
             let table = jobs.create_status_table();
             println!("{}", table);
         }
@@ -108,7 +108,7 @@ fn main() -> anyhow::Result<()> {
             job_id,
             update_status,
         } => {
-            let mut jobs = Jobs::load_jobs(&config_dir)?;
+            let mut jobs = Jobs::load_jobs(&json_file)?;
 
             match job_id {
                 Some(id) => {

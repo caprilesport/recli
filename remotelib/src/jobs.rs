@@ -26,27 +26,25 @@ impl DerefMut for Jobs {
 }
 
 impl Jobs {
-    pub fn save_jobs(&self, config_dir: &std::path::Path) -> Result<(), Error> {
-        tracing::debug!("Saving jobs to CONFIG_DIR/jobs.json");
-        let jobs_file = config_dir.join("jobs.json");
-        let file = std::fs::File::create(jobs_file)?;
+    pub fn save_jobs(&self, json_file_path: &std::path::Path) -> Result<(), Error> {
+        tracing::debug!("Saving jobs to {:?}", json_file_path);
+        let file = std::fs::File::create(json_file_path)?;
         serde_json::to_writer_pretty(file, &self.jobs)?;
         Ok(())
     }
 
-    pub fn load_jobs(config_dir: &std::path::Path) -> Result<Self, Error> {
-        tracing::debug!("Loading jobs from CONFIG_DIR/jobs.json");
-        let jobs_file = config_dir.join("jobs.json");
-        if !jobs_file.exists() {
+    pub fn load_jobs(json_file_path: &std::path::Path) -> Result<Self, Error> {
+        tracing::debug!("Loading jobs from {:?}", json_file_path);
+        if !json_file_path.exists() {
             return Ok(Jobs { jobs: Vec::new() });
         }
 
-        let file = std::fs::File::open(&jobs_file)?;
+        let file = std::fs::File::open(&json_file_path)?;
         if file.metadata()?.len() == 0 {
             return Ok(Jobs { jobs: Vec::new() });
         }
 
-        let file = std::fs::File::open(jobs_file)?;
+        let file = std::fs::File::open(json_file_path)?;
         let reader = std::io::BufReader::new(file);
         let jobs: Vec<Job> = serde_json::from_reader(reader)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -124,18 +122,9 @@ impl Jobs {
         jobs_by_remote
     }
 
-    // pub fn group_by_remote(&self) -> HashMap<String, Vec<&Uuid>> {
-    //     unimplemented!()
-    // }
-
     pub fn query(&self) -> JobQuery {
         JobQuery::new(&self.jobs)
     }
-
-    // pub fn filter(&mut self, query: JobQuery) {
-    //     let ids: std::collections::HashSet<Uuid> = query.iter().map(|job| *job.id()).collect();
-    //     self.jobs.retain(|job| ids.contains(job.id()));
-    // }
 
     pub fn create_status_table(&self) -> String {
         let mut builder = Builder::default();
