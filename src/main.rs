@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
             for remote in config.remotes {
                 let connection = SshConnection::new(&remote)?;
                 let statuses = remote.status(&connection)?;
-                jobs.update(statuses);
+                jobs.update(statuses, remote.name());
             }
 
             jobs.save_jobs()?;
