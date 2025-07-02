@@ -6,7 +6,7 @@ use tabled::builder::Builder;
 use tracing::info;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Jobs {
     jobs: Vec<Job>,
 }
@@ -141,7 +141,15 @@ impl Jobs {
 
     pub fn create_status_table(&self) -> String {
         let mut builder = Builder::default();
-        builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
+        builder.push_record([
+            "Name",
+            "Project",
+            "St",
+            "Synced",
+            "Remote",
+            "Remote ID",
+            "ID",
+        ]);
 
         self.jobs.iter().for_each(|j| {
             builder.push_record(vec![
@@ -151,6 +159,7 @@ impl Jobs {
                 &j.synced().to_string(),
                 j.remote(),
                 j.remote_id(),
+                &j.id().to_string(),
             ])
         });
 
