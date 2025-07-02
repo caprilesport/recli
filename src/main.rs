@@ -5,11 +5,12 @@ use tracing::info;
 use std::path::PathBuf;
 
 use connection::SshConnection;
-use job::{Job, JobStatus, Jobs};
+use job::{Job, Jobs};
 
 mod config;
 mod connection;
 mod job;
+mod jobs;
 mod queuemanager;
 mod remote;
 
