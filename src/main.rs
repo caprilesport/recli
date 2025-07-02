@@ -38,7 +38,11 @@ enum Mode {
     /// Fetch all job changes from the remotes
     Fetch,
     /// Downloads all files for finished jobs
-    Sync { job_id: Option<uuid::Uuid> },
+    Sync {
+        job_id: Option<uuid::Uuid>,
+        #[arg(short, long)]
+        update_status: bool,
+    },
     /// Displays the status of jobs
     Status,
 }
@@ -102,8 +106,38 @@ fn main() -> anyhow::Result<()> {
             let table = jobs.create_status_table();
             println!("{}", table);
         }
-        Mode::Sync { job_id } => {
-            unimplemented!()
+        Mode::Sync {
+            job_id,
+            update_status,
+        } => {
+            let mut jobs = Jobs::load_jobs()?;
+
+            match job_id {
+                Some(id) => {
+                    if let Some(job) = jobs.find_by_id(&id) {
+                        let remote = config.get_remote(job.remote())?;
+                        let connection = SshConnection::new(&remote)?;
+                        jobs.sync_job(&id, &remote, &connection, update_status)?;
+                    } else {
+                        return Err(anyhow::anyhow!(crate::job::Error::JobNotFound(id)));
+                    }
+                }
+                None => {
+                    let syncable_jobs = jobs.syncable();
+
+                    if syncable_jobs.is_empty() {
+                        info!("No jobs to sync")
+                    } else {
+                        for (remote_name, ids) in syncable_jobs {
+                            let remote = config.get_remote(&remote_name)?;
+                            let connection = SshConnection::new(&remote)?;
+                            for id in ids {
+                                jobs.sync_job(&id, &remote, &connection, update_status)?;
+                            }
+                        }
+                    }
+                }
+            }
         }
     };
 
