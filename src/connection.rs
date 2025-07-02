@@ -1,4 +1,3 @@
-use crate::job::JobError;
 use crate::remote::Remote;
 use ssh2::Session;
 use std::io::prelude::*;
@@ -7,17 +6,35 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, trace};
 
+#[derive(thiserror::Error, std::fmt::Debug)]
+pub enum Error {
+    #[error("Failed to create remote dir:\n{0}")]
+    FailedToCreateDirError(#[from] ssh2::Error),
+    #[error("{0}")]
+    IO(#[from] std::io::Error),
+    #[error(
+        "Command '{command}' failed with exit code
+      {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
+    )]
+    CommandFailed {
+        command: String,
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    },
+}
+
 /// A trait that defines the actions that can be performed on a remote machine.
 /// This abstraction allows for decoupling the runtime logic from the test logic
 pub trait RemoteConnection {
     /// Executes a command on the remote and returns its stdout.
-    fn execute(&self, command: &str) -> Result<String, JobError>;
+    fn execute(&self, command: &str) -> Result<String, Error>;
 
     /// Creates a directory on the remote.
-    fn mkdir(&self, path: &Path) -> Result<(), JobError>;
+    fn mkdir(&self, path: &Path) -> Result<(), Error>;
 
     /// Uploads a list of local files to a remote directory.
-    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), JobError>;
+    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error>;
 
     /// Downloads files from a remote directory to a local one, based on a basename.
     fn download_files(
@@ -25,7 +42,7 @@ pub trait RemoteConnection {
         remote_dir: &Path,
         local_dir: &Path,
         basename: &str,
-    ) -> Result<(), JobError>;
+    ) -> Result<(), Error>;
 }
 
 pub struct SshConnection {
@@ -34,7 +51,7 @@ pub struct SshConnection {
 
 impl SshConnection {
     /// Creates a new SSH connection based on the remote's configuration.
-    pub fn new(remote: &Remote) -> Result<Self, JobError> {
+    pub fn new(remote: &Remote) -> Result<Self, Error> {
         debug!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
         trace!("Using {} as target.", target);
@@ -48,7 +65,7 @@ impl SshConnection {
 }
 
 impl RemoteConnection for SshConnection {
-    fn execute(&self, command: &str) -> Result<String, JobError> {
+    fn execute(&self, command: &str) -> Result<String, Error> {
         let mut channel = self.session.channel_session()?;
         channel.exec(command)?;
         trace!("Executing {} @ remote", command);
@@ -63,7 +80,7 @@ impl RemoteConnection for SshConnection {
         let exit_code = channel.exit_status()?;
 
         if exit_code != 0 {
-            return Err(JobError::CommandFailed {
+            return Err(Error::CommandFailed {
                 command: command.to_string(),
                 exit_code,
                 stdout,
@@ -74,14 +91,14 @@ impl RemoteConnection for SshConnection {
         Ok(stdout)
     }
 
-    fn mkdir(&self, path: &Path) -> Result<(), JobError> {
+    fn mkdir(&self, path: &Path) -> Result<(), Error> {
         debug!("Creating directory {:?} @ remote", path);
         let sftp = self.session.sftp()?;
         sftp.mkdir(path, 0o755)?;
         Ok(())
     }
 
-    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), JobError> {
+    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
         for file_path in local_paths {
             debug!("Uploading {:?} to {:?}", file_path, remote_dir);
@@ -98,7 +115,7 @@ impl RemoteConnection for SshConnection {
         remote_dir: &Path,
         local_dir: &Path,
         basename: &str,
-    ) -> Result<(), JobError> {
+    ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
         for entry in sftp.readdir(remote_dir)? {
             let (remote_path, stat) = entry;
