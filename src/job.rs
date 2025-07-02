@@ -4,12 +4,17 @@ use uuid::Uuid;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
+    #[error("Job with id {0} not found")]
+    JobNotFound(Uuid),
     #[error("Not in a recli project folder")]
     NotInAProject,
     #[error("Connection error:\n{0}")]
     Ssh(#[from] crate::connection::Error),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
+    // TODO:Improve this error message
+    #[error("Serde failed {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 // Helper module for UUID serialization
@@ -87,9 +92,9 @@ impl Job {
         &self.remote_id
     }
 
-    // pub fn submit_time(&self) -> &str {
-    //     &self.submit_time
-    // }
+    pub fn submit_time(&self) -> &str {
+        &self.submit_time
+    }
 
     pub fn working_dir(&self) -> &PathBuf {
         &self.working_dir

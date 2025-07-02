@@ -5,7 +5,8 @@ use tracing::info;
 use std::path::PathBuf;
 
 use connection::SshConnection;
-use job::{Job, Jobs};
+use job::Job;
+use jobs::Jobs;
 
 mod config;
 mod connection;
