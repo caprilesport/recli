@@ -60,8 +60,8 @@ impl Remote {
         &self.user
     }
 
-    pub fn work_dir(&self) -> PathBuf {
-        self.work_directory.clone()
+    pub fn work_dir(&self) -> &Path {
+        &self.work_directory
     }
 
     // #[cfg(test)]

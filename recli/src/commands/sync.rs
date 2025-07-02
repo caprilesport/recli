@@ -13,7 +13,7 @@ use tracing::info;
 /// its current status.
 pub struct Args {
     job_id: Option<uuid::Uuid>,
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = false)]
     update_status: bool,
 }
 
@@ -40,11 +40,14 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
                     let remote = ctx.config.get_remote(&remote_name)?;
                     let connection = SshConnection::new(&remote)?;
                     for id in ids {
-                        jobs.sync_job(&id, &remote, &connection, args.update_status)?;
+                        jobs.sync_job(&id, &remote, &connection, true)?;
+                        info!("Syncing job {}", id);
                     }
                 }
             }
         }
     }
+
+    jobs.save_jobs(&ctx.json_file)?;
     Ok(())
 }
