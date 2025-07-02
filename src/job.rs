@@ -1,24 +1,20 @@
 use std::path::PathBuf;
 use thiserror;
+use uuid::Uuid;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
-pub enum JobError {
+pub enum Error {
+    #[error("Job with id {0} not found")]
+    JobNotFound(Uuid),
     #[error("Not in a recli project folder")]
     NotInAProject,
-    #[error("SSH error:\n{0}")]
-    Ssh(#[from] ssh2::Error),
+    #[error("Connection error:\n{0}")]
+    Ssh(#[from] crate::connection::Error),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    #[error(
-        "Command '{command}' failed with exit code
-      {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
-    )]
-    CommandFailed {
-        command: String,
-        exit_code: i32,
-        stdout: String,
-        stderr: String,
-    },
+    // TODO:Improve this error message
+    #[error("Serde failed {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 // Helper module for UUID serialization
@@ -45,7 +41,7 @@ mod uuid_as_string {
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
     #[serde(with = "uuid_as_string")]
-    id: uuid::Uuid,
+    id: Uuid,
     name: String,
     remote: String,
     remote_id: String,
@@ -60,11 +56,11 @@ pub struct Job {
 
 impl Job {
     pub fn new(
-        id: uuid::Uuid,
+        id: Uuid,
         remote: String,
         remote_id: String,
         basename: String,
-    ) -> Result<Self, JobError> {
+    ) -> Result<Self, Error> {
         let cwd = std::env::current_dir().unwrap();
         let project = Self::find_project(&cwd)?;
         let name = Job::get_name(&project, &basename).unwrap();
@@ -88,7 +84,7 @@ impl Job {
         })
     }
 
-    pub fn id(&self) -> &uuid::Uuid {
+    pub fn id(&self) -> &Uuid {
         &self.id
     }
 
@@ -96,9 +92,9 @@ impl Job {
         &self.remote_id
     }
 
-    // pub fn submit_time(&self) -> &str {
-    //     &self.submit_time
-    // }
+    pub fn submit_time(&self) -> &str {
+        &self.submit_time
+    }
 
     pub fn working_dir(&self) -> &PathBuf {
         &self.working_dir
@@ -150,7 +146,7 @@ impl Job {
         Ok(parts.join("-"))
     }
 
-    fn find_project(start_path: &std::path::Path) -> Result<String, JobError> {
+    fn find_project(start_path: &std::path::Path) -> Result<String, Error> {
         let mut current_path = start_path;
 
         loop {
@@ -159,47 +155,18 @@ impl Job {
                     .file_name() // Returns Option<&OsStr>
                     .and_then(|name| name.to_str()) // Converts to
                     .map(|name_str| name_str.to_owned()) // Converts
-                    .ok_or(JobError::NotInAProject); // Converts
+                    .ok_or(Error::NotInAProject); // Converts
             }
 
             match current_path.parent() {
                 Some(parent) => current_path = parent,
-                None => return Err(JobError::NotInAProject),
+                None => return Err(Error::NotInAProject),
             }
         }
     }
-
-    pub fn save_jobs(jobs: &[Job]) -> Result<(), std::io::Error> {
-        tracing::debug!("Saving jobs to CONFIG_DIR/jobs.json");
-        let config_dir = crate::config::Config::get_dir()?;
-        let jobs_file = config_dir.join("jobs.json");
-        let file = std::fs::File::create(jobs_file)?;
-        serde_json::to_writer_pretty(file, jobs)?;
-        Ok(())
-    }
-
-    pub fn load_jobs() -> Result<Vec<Job>, std::io::Error> {
-        tracing::debug!("Loading jobs from CONFIG_DIR/jobs.json");
-        let config_dir = crate::config::Config::get_dir()?;
-        let jobs_file = config_dir.join("jobs.json");
-        if !jobs_file.exists() {
-            return Ok(Vec::new());
-        }
-
-        let file = std::fs::File::open(&jobs_file)?;
-        if file.metadata()?.len() == 0 {
-            return Ok(Vec::new());
-        }
-
-        let file = std::fs::File::open(jobs_file)?;
-        let reader = std::io::BufReader::new(file);
-        let jobs = serde_json::from_reader(reader)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(jobs)
-    }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy)]
 pub enum JobStatus {
     Queued,
     Running,
@@ -260,7 +227,7 @@ mod tests {
     fn test_find_project_not_found() {
         let dir = tempdir().unwrap();
         let result = Job::find_project(&dir.path());
-        assert!(matches!(result, Err(JobError::NotInAProject)));
+        assert!(matches!(result, Err(Error::NotInAProject)));
     }
 
     #[test]

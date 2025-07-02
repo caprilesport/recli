@@ -3,14 +3,15 @@ use clap_verbosity_flag::LevelFilter;
 use tracing::info;
 
 use std::path::PathBuf;
-use tabled::builder::Builder;
 
 use connection::SshConnection;
-use job::{Job, JobStatus};
+use job::Job;
+use jobs::Jobs;
 
 mod config;
 mod connection;
 mod job;
+mod jobs;
 mod queuemanager;
 mod remote;
 
@@ -37,7 +38,11 @@ enum Mode {
     /// Fetch all job changes from the remotes
     Fetch,
     /// Downloads all files for finished jobs
-    Sync { job_id: Option<String> },
+    Sync {
+        job_id: Option<uuid::Uuid>,
+        #[arg(short, long)]
+        update_status: bool,
+    },
     /// Displays the status of jobs
     Status,
 }
@@ -62,117 +67,79 @@ fn main() -> anyhow::Result<()> {
         Mode::Submit { inpfile, remote } => {
             let id = uuid::Uuid::new_v4();
             let remote = config.get_remote(&remote)?;
+            let file_stem = inpfile.file_stem().unwrap().to_str().unwrap();
+
             let connection = SshConnection::new(&remote)?;
+            let remote_id = remote.submit(id, &inpfile, &connection)?;
 
-            let job = remote.submit(id, &inpfile, &connection)?;
-
-            let mut jobs = Job::load_jobs()?;
-            jobs.push(job);
-            Job::save_jobs(&jobs)?;
+            let job = Job::new(
+                id,
+                remote.name().to_owned(),
+                remote_id,
+                file_stem.to_owned(),
+            )?;
+            let mut jobs = Jobs::load_jobs()?;
 
             info!(
                 "Job submitted successfully with id: {}. Remote id: {}",
                 id,
-                jobs.last().unwrap().remote_id()
+                &job.remote_id()
             );
+
+            jobs.add(job);
+            jobs.save_jobs()?;
         }
 
         Mode::Fetch => {
-            let mut jobs = Job::load_jobs()?;
-            let mut changed_jobs = Vec::new();
+            let mut jobs = Jobs::load_jobs()?;
 
             for remote in config.remotes {
                 let connection = SshConnection::new(&remote)?;
                 let statuses = remote.status(&connection)?;
-                for job in jobs.iter_mut() {
-                    let old_status = job.status().clone();
-                    let status = statuses.get(job.remote_id());
-
-                    match status {
-                        Some(st) => job.set_status(st.to_owned()),
-                        None => (),
-                    }
-                    if job.status() != &old_status {
-                        changed_jobs.push(job.clone());
-                    }
-                }
+                jobs.update(statuses, remote.name());
             }
 
-            Job::save_jobs(&jobs)?;
-
-            if changed_jobs.is_empty() {
-                info!("No job status changes.");
-            } else {
-                info!("Jobs with status changes:");
-                for job in changed_jobs {
-                    info!("  - Job {}: changed to {:?}", job.id(), job.status());
-                }
-            }
+            jobs.save_jobs()?;
         }
         Mode::Status => {
-            let jobs = Job::load_jobs()?;
-            let table = create_status_table(jobs);
+            let jobs = Jobs::load_jobs()?;
+            let table = jobs.create_status_table();
             println!("{}", table);
         }
-        Mode::Sync { job_id } => {
-            let mut jobs = Job::load_jobs()?;
-            let mut synced_jobs_count = 0;
+        Mode::Sync {
+            job_id,
+            update_status,
+        } => {
+            let mut jobs = Jobs::load_jobs()?;
 
-            // If a specific job_id is provided, sync only that job
-            if let Some(id) = job_id {
-                // Filter out the jobs
-                let job = jobs
-                    .iter_mut()
-                    .filter(|j| j.id().to_string() == id)
-                    .next()
-                    .unwrap();
-                let remote = config.get_remote(job.remote())?;
-                let connection = SshConnection::new(&remote)?;
-
-                remote.sync(&job, &connection)?;
-            } else {
-                for job in jobs.iter_mut() {
-                    if job.status() == &JobStatus::Finished
-                        || job.status() == &JobStatus::Error && !job.synced()
-                    {
-                        // If no job_id is provided, sync all unsynced and finished jobs
+            match job_id {
+                Some(id) => {
+                    if let Some(job) = jobs.find_by_id(&id) {
                         let remote = config.get_remote(job.remote())?;
                         let connection = SshConnection::new(&remote)?;
-                        remote.sync(&job, &connection)?;
-                        job.set_synced_status(true);
-                        synced_jobs_count += 1;
+                        jobs.sync_job(&id, &remote, &connection, update_status)?;
+                    } else {
+                        return Err(anyhow::anyhow!(crate::job::Error::JobNotFound(id)));
                     }
                 }
-                if synced_jobs_count > 0 {
-                    info!("Successfully synced {} job(s).", synced_jobs_count);
-                } else {
-                    info!("No finished jobs to sync.");
+                None => {
+                    let syncable_jobs = jobs.syncable();
+
+                    if syncable_jobs.is_empty() {
+                        info!("No jobs to sync")
+                    } else {
+                        for (remote_name, ids) in syncable_jobs {
+                            let remote = config.get_remote(&remote_name)?;
+                            let connection = SshConnection::new(&remote)?;
+                            for id in ids {
+                                jobs.sync_job(&id, &remote, &connection, update_status)?;
+                            }
+                        }
+                    }
                 }
             }
-
-            Job::save_jobs(&jobs)?;
         }
     };
 
     Ok(())
-}
-
-fn create_status_table(jobs: Vec<Job>) -> String {
-    let mut builder = Builder::default();
-    builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
-
-    jobs.iter().for_each(|j| {
-        builder.push_record(vec![
-            j.name(),
-            j.project(),
-            j.status().as_str(),
-            &j.synced().to_string(),
-            j.remote(),
-            j.remote_id(),
-        ])
-    });
-
-    let mut table = builder.build();
-    table.with(tabled::settings::Style::rounded());
-    table.to_string()
 }
