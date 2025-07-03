@@ -25,10 +25,6 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    /// Fetches the latest status for all tracked jobs from the remotes.
-    ///
-    /// This command connects to each configured remote, queries the queue manager
-    /// for the current status of your jobs, and updates the local job cache.
     Fetch,
     Submit(commands::submit::Args),
     Sync(commands::sync::Args),
@@ -66,8 +62,8 @@ fn main() -> anyhow::Result<()> {
     let ctx = Context::new()?;
 
     match cli.mode {
+        Mode::Fetch(args) => commands::fetch::execute(args, &ctx)?,
         Mode::Submit(args) => commands::submit::execute(args, &ctx)?,
-        Mode::Fetch => commands::fetch::execute(&ctx)?,
         Mode::Status(args) => commands::status::execute(args, &ctx)?,
         Mode::Sync(args) => commands::sync::execute(args, &ctx)?,
     };
