@@ -40,8 +40,8 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
                     let remote = ctx.config.get_remote(&remote_name)?;
                     let connection = SshConnection::new(&remote)?;
                     for id in ids {
-                        jobs.sync_job(&id, &remote, &connection, true)?;
                         info!("Syncing job {}", id);
+                        jobs.sync_job(&id, &remote, &connection, true)?;
                     }
                 }
             }
