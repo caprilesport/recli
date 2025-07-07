@@ -72,6 +72,7 @@ impl SshConnection {
     pub fn new(remote: &Remote) -> Result<Self, Error> {
         debug!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
+        // TODO: adress these unwraps, as connect_timeout doesnt accept a vector we need the .next() for now, but there's certainly a better way to throw errros here
         let socket_adress = target.to_socket_addrs().unwrap().next().unwrap();
         trace!("Using {} as target.", target);
 
@@ -122,7 +123,7 @@ impl RemoteConnection for SshConnection {
     fn mkdir(&self, path: &Path) -> Result<(), Error> {
         debug!("Creating directory {:?} @ remote", path);
         let sftp = self.session.sftp()?;
-        sftp.mkdir(path, 0o755)?;
+        sftp.mkdir(path, 0o755)?; // 755 chmod basically
         Ok(())
     }
 
