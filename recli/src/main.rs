@@ -25,7 +25,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Mode {
-    Fetch,
+    Fetch(commands::fetch::Args),
     Submit(commands::submit::Args),
     Sync(commands::sync::Args),
     Status(commands::status::Args),
