@@ -6,7 +6,6 @@ use tracing::trace;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub remotes: Vec<Remote>,
-    pub work_directory: std::path::PathBuf,
     #[serde(skip)]
     pub ignore: Vec<glob::Pattern>,
 }
