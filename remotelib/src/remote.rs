@@ -21,7 +21,7 @@ pub enum Error {
 pub struct Remote {
     name: String,
     hostname: String,
-    port: i16,
+    port: u16,
     user: String,
     work_directory: PathBuf,
     prepare_args: Vec<String>,
@@ -52,7 +52,7 @@ impl Remote {
         &self.hostname
     }
 
-    pub fn port(&self) -> i16 {
+    pub fn port(&self) -> u16 {
         self.port
     }
 
