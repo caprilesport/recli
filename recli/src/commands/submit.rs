@@ -3,7 +3,7 @@ use remotelib::job::Job;
 use remotelib::jobs::Jobs;
 use std::path::PathBuf;
 
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, clap::Args)]
 /// Submits a job to a specified remote machine.
@@ -21,7 +21,13 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     let remote = ctx.config.get_remote(&args.remote)?;
     let file_stem = args.inpfile.file_stem().unwrap().to_str().unwrap();
 
-    let connection = SshConnection::new(&remote)?;
+    let connection = match SshConnection::new(&remote) {
+        Ok(sshconnection) => sshconnection,
+        Err(err) => {
+            error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+            return Err(err)?;
+        }
+    };
     let remote_id = remote.submit(id, &args.inpfile, &connection)?;
 
     let job = Job::new(
