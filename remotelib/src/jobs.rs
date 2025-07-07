@@ -88,6 +88,7 @@ impl Jobs {
         remote: &crate::remote::Remote,
         connection: &dyn crate::connection::RemoteConnection,
         update_status: bool,
+        ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let job = self
             .iter_mut()
@@ -97,7 +98,7 @@ impl Jobs {
 
         info!("Syncing job {} @ {}", job.name(), job.remote());
 
-        connection.download_files(&remote_dir, &job.working_dir(), job.basename())?;
+        connection.download_files(&remote_dir, &job.working_dir(), job.basename(), ignore)?;
 
         if update_status {
             job.set_synced_status(true);

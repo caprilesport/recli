@@ -25,7 +25,13 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
             if let Some(job) = jobs.find_by_id(&id) {
                 let remote = ctx.config.get_remote(job.remote())?;
                 let connection = SshConnection::new(&remote)?;
-                jobs.sync_job(&id, &remote, &connection, args.update_status)?;
+                jobs.sync_job(
+                    &id,
+                    &remote,
+                    &connection,
+                    args.update_status,
+                    &ctx.config.ignore,
+                )?;
             } else {
                 return Err(anyhow::anyhow!(remotelib::job::Error::JobNotFound(id)));
             }
@@ -47,7 +53,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
                     };
                     for id in ids {
                         info!("Syncing job {}", id);
-                        jobs.sync_job(&id, &remote, &connection, true)?;
+                        jobs.sync_job(&id, &remote, &connection, true, &ctx.config.ignore)?;
                     }
                 }
             }

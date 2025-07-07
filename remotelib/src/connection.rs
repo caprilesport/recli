@@ -12,13 +12,21 @@ const CONNECTION_TIMEOUT: u32 = 3000;
 pub enum Error {
     #[error("Connection to remote {0} timed out.")]
     TimeoutToRemote(String),
-    #[error("Failed to create remote dir:\n{0}")]
+    #[error(
+        "Failed to create remote dir:
+{0}"
+    )]
     FailedToCreateDirError(#[from] ssh2::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error),
     #[error(
-        "Command '{command}' failed with exit code
-      {exit_code}\n---\nSTDOUT:\n{stdout}\n---\nSTDERR:\n{stderr}"
+        "Command '{command}' failed with exit code {exit_code}
+---
+STDOUT:
+{stdout}
+---
+STDERR:
+{stderr}"
     )]
     CommandFailed {
         command: String,
@@ -38,7 +46,12 @@ pub trait RemoteConnection {
     fn mkdir(&self, path: &Path) -> Result<(), Error>;
 
     /// Uploads a list of local files to a remote directory.
-    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error>;
+    fn upload_files(
+        &self,
+        local_paths: &[PathBuf],
+        remote_dir: &Path,
+        ignore: &[glob::Pattern],
+    ) -> Result<(), Error>;
 
     /// Downloads files from a remote directory to a local one, based on a basename.
     fn download_files(
@@ -46,6 +59,7 @@ pub trait RemoteConnection {
         remote_dir: &Path,
         local_dir: &Path,
         basename: &str,
+        ignore: &[glob::Pattern],
     ) -> Result<(), Error>;
 }
 
@@ -112,9 +126,18 @@ impl RemoteConnection for SshConnection {
         Ok(())
     }
 
-    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error> {
+    fn upload_files(
+        &self,
+        local_paths: &[PathBuf],
+        remote_dir: &Path,
+        ignore: &[glob::Pattern],
+    ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
         for file_path in local_paths {
+            if ignore.iter().any(|p| p.matches_path(file_path)) {
+                debug!("Ignoring {:?} due to ignore pattern", file_path);
+                continue;
+            }
             debug!("Uploading {:?} to {:?}", file_path, remote_dir);
             let mut local_file = std::fs::File::open(file_path)?;
             let remote_path = remote_dir.join(file_path.file_name().unwrap());
@@ -129,10 +152,15 @@ impl RemoteConnection for SshConnection {
         remote_dir: &Path,
         local_dir: &Path,
         basename: &str,
+        ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
         for entry in sftp.readdir(remote_dir)? {
             let (remote_path, stat) = entry;
+            if ignore.iter().any(|p| p.matches_path(&remote_path)) {
+                debug!("Ignoring {:?} due to ignore pattern", &remote_path);
+                continue;
+            }
             if stat.is_file()
                 && remote_path
                     .file_name()
