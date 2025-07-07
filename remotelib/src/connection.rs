@@ -60,6 +60,7 @@ impl SshConnection {
         let target = format!("{}:{}", remote.hostname(), remote.port());
         let socket_adress = target.to_socket_addrs().unwrap().next().unwrap();
         trace!("Using {} as target.", target);
+
         let tcp = match TcpStream::connect_timeout(
             &socket_adress,
             std::time::Duration::from_millis(3000),

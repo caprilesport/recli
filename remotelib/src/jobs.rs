@@ -72,7 +72,12 @@ impl Jobs {
         } else {
             info!("Jobs with status changes @ {}:", &remotename);
             for job in changed_jobs {
-                info!("  - Job {}: changed to {:?}", job.id(), job.status());
+                info!(
+                    "  - Job {} @ {}: changed to {:?}",
+                    job.name(),
+                    job.remote(),
+                    job.status()
+                );
             }
         }
     }
@@ -89,6 +94,8 @@ impl Jobs {
             .find(|j| j.id() == id)
             .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
         let remote_dir = remote.work_dir().join(&id.to_string());
+
+        info!("Syncing job {} @ {}", job.name(), job.remote());
 
         connection.download_files(&remote_dir, &job.working_dir(), job.basename())?;
 
