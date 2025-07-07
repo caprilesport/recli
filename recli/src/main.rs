@@ -9,8 +9,8 @@ mod config;
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A remote job submission and management CLI.")]
 #[command(
-    long_about = "recli is a tool designed to simplify the process of submitting, \
-    monitoring, and retrieving files from jobs running on remote high-performance \
+    long_about = "recli is a tool designed to simplify the process of submitting, 
+    monitoring, and retrieving files from jobs running on remote high-performance 
     computing (HPC) clusters or servers."
 )]
 #[command(propagate_version = true)]
@@ -21,6 +21,9 @@ struct Cli {
     /// Verbosity options.
     #[command(flatten)]
     verbosity: clap_verbosity_flag::Verbosity<clap_verbosity_flag::InfoLevel>,
+    /// Sync all files, ignoring the ignore file
+    #[arg(long, global = true, default_value_t = false)]
+    sync_all_files: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -37,9 +40,13 @@ struct Context {
 }
 
 impl Context {
-    fn new() -> anyhow::Result<Self> {
+    fn new(cli: &Cli) -> anyhow::Result<Self> {
+        let mut config = Config::read()?;
+        if cli.sync_all_files {
+            config.ignore.clear();
+        }
         Ok(Self {
-            config: Config::read()?,
+            config,
             json_file: Config::get_dir()?.join("jobs.json"),
         })
     }
@@ -59,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     };
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
-    let ctx = Context::new()?;
+    let ctx = Context::new(&cli)?;
 
     match cli.mode {
         Mode::Fetch(args) => commands::fetch::execute(args, &ctx)?,

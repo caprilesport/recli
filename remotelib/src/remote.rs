@@ -76,6 +76,7 @@ impl Remote {
         job_id: uuid::Uuid,
         inp_file: &Path,
         connection: &dyn RemoteConnection,
+        ignore: &[glob::Pattern],
     ) -> Result<String, Error> {
         self.prepare(inp_file)?;
 
@@ -97,7 +98,7 @@ impl Remote {
             })
             .collect();
 
-        connection.upload_files(&files_to_send, &remote_dir)?;
+        connection.upload_files(&files_to_send, &remote_dir, ignore)?;
 
         let job_script_name = format!("{}.job", file_stem);
         let command = self
@@ -166,6 +167,7 @@ mod tests {
             &self,
             local_paths: &[PathBuf],
             remote_dir: &Path,
+            _ignore: &[glob::Pattern],
         ) -> Result<(), crate::connection::Error> {
             self.uploads
                 .borrow_mut()
@@ -178,6 +180,7 @@ mod tests {
             remote_dir: &Path,
             local_dir: &Path,
             basename: &str,
+            _ignore: &[glob::Pattern],
         ) -> Result<(), crate::connection::Error> {
             self.downloads.borrow_mut().push((
                 remote_dir.to_path_buf(),

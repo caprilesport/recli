@@ -28,7 +28,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
             return Err(err)?;
         }
     };
-    let remote_id = remote.submit(id, &args.inpfile, &connection)?;
+    let remote_id = remote.submit(id, &args.inpfile, &connection, &ctx.config.ignore)?;
 
     let job = Job::new(
         id,
