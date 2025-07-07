@@ -6,10 +6,15 @@ use remotelib::jobs::{Jobs, Match};
 
 #[derive(Debug, clap::Args)]
 /// Displays the status of jobs, with optional filters.
+/// By default it doesn't show jobs that are synced
+/// To show all jobs recorded, use the -a/--all flag
 ///
 /// Shows a table of all tracked jobs. You can use the flags below to filter
 /// the jobs that are displayed.
 pub struct Args {
+    /// Show all jobs
+    #[arg(long, short, action)]
+    pub all: bool,
     /// Filter by id
     #[arg(long, short)]
     pub id: Option<Uuid>,
@@ -39,12 +44,11 @@ pub struct Args {
     pub status: Option<remotelib::job::JobStatus>,
 
     /// Filter by synced status
-    #[arg(long)]
+    #[arg(long, action)]
     pub synced: Option<bool>,
 }
 
 pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
-    // let status =
     let jobs = Jobs::load_jobs(&ctx.json_file)?;
     let mut query = jobs.query();
     if let Some(id) = args.id {
@@ -79,6 +83,10 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
         query = query.synced(*synced);
     }
 
+    if !args.all {
+        query = query.synced(false);
+    }
+
     let jobs: Vec<&Job> = query.iter().collect();
 
     let table = create_status_table(jobs);
@@ -89,15 +97,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
 
 pub fn create_status_table(jobs: Vec<&Job>) -> String {
     let mut builder = Builder::default();
-    builder.push_record([
-        "Name",
-        "Project",
-        "St",
-        "Synced",
-        "Remote",
-        "Remote ID",
-        "ID",
-    ]);
+    builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
 
     jobs.iter().for_each(|j| {
         builder.push_record(vec![
@@ -107,7 +107,6 @@ pub fn create_status_table(jobs: Vec<&Job>) -> String {
             &j.synced().to_string(),
             j.remote(),
             j.remote_id(),
-            &j.id().to_string(),
         ])
     });
 

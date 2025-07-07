@@ -72,7 +72,12 @@ impl Jobs {
         } else {
             info!("Jobs with status changes @ {}:", &remotename);
             for job in changed_jobs {
-                info!("  - Job {}: changed to {:?}", job.id(), job.status());
+                info!(
+                    "  - Job {} @ {}: changed to {:?}",
+                    job.name(),
+                    job.remote(),
+                    job.status()
+                );
             }
         }
     }
@@ -83,6 +88,7 @@ impl Jobs {
         remote: &crate::remote::Remote,
         connection: &dyn crate::connection::RemoteConnection,
         update_status: bool,
+        ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let job = self
             .iter_mut()
@@ -90,7 +96,9 @@ impl Jobs {
             .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
         let remote_dir = remote.work_dir().join(&id.to_string());
 
-        connection.download_files(&remote_dir, &job.working_dir(), job.basename())?;
+        info!("Syncing job {} @ {}", job.name(), job.remote());
+
+        connection.download_files(&remote_dir, &job.working_dir(), job.basename(), ignore)?;
 
         if update_status {
             job.set_synced_status(true);
