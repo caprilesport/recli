@@ -132,17 +132,17 @@ impl Job {
         &self.name
     }
 
-    fn get_name(project: &str, _basename: &str) -> std::io::Result<String> {
+    fn get_name(project: &str, basename: &str) -> std::io::Result<String> {
         let cwd = std::env::current_dir()?;
 
-        let parts: Vec<String> = cwd
+        let mut parts: Vec<String> = cwd
             .iter()
             .skip_while(|part| *part != std::ffi::OsStr::new(&project))
             .skip(1)
             .filter_map(|s| s.to_str().map(String::from))
             .collect();
 
-        // parts.push(basename.to_owned());
+        parts.push(basename.to_owned());
         Ok(parts.join("-"))
     }
 
