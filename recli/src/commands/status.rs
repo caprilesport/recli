@@ -15,6 +15,11 @@ pub struct Args {
     /// Show all jobs
     #[arg(long, short, action)]
     pub all: bool,
+
+    /// Show id for each job
+    #[arg(long, action)]
+    pub show_id: bool,
+
     /// Filter by id
     #[arg(long, short)]
     pub id: Option<Uuid>,
@@ -89,25 +94,35 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
 
     let jobs: Vec<&Job> = query.iter().collect();
 
-    let table = create_status_table(jobs);
+    let table = create_status_table(jobs, args.show_id);
     println!("{}", table);
 
     Ok(())
 }
 
-pub fn create_status_table(jobs: Vec<&Job>) -> String {
+pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     let mut builder = Builder::default();
-    builder.push_record(["Name", "Project", "St", "Synced", "Remote", "Remote ID"]);
+    let mut headers = vec!["Name", "Project", "St", "Synced", "Remote", "Remote ID"];
+    if with_id {
+        headers.push("ID");
+    }
+    builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        builder.push_record(vec![
+        let synced = j.synced().to_string();
+        let id = j.id().to_string();
+        let mut row = vec![
             j.name(),
             j.project(),
             j.status().as_str(),
-            &j.synced().to_string(),
+            &synced,
             j.remote(),
             j.remote_id(),
-        ])
+        ];
+        if with_id {
+            row.push(&id);
+        }
+        builder.push_record(row);
     });
 
     let mut table = builder.build();
