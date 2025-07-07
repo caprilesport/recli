@@ -1,13 +1,17 @@
 use crate::remote::Remote;
 use ssh2::Session;
 use std::io::prelude::*;
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 
 use tracing::{debug, trace};
 
+const CONNECTION_TIMEOUT: u32 = 3000;
+
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
+    #[error("Connection to remote {0} timed out.")]
+    TimeoutToRemote(String),
     #[error("Failed to create remote dir:\n{0}")]
     FailedToCreateDirError(#[from] ssh2::Error),
     #[error("{0}")]
@@ -54,9 +58,18 @@ impl SshConnection {
     pub fn new(remote: &Remote) -> Result<Self, Error> {
         debug!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
+        let socket_adress = target.to_socket_addrs().unwrap().next().unwrap();
         trace!("Using {} as target.", target);
-        let tcp = TcpStream::connect(target)?;
+        let tcp = match TcpStream::connect_timeout(
+            &socket_adress,
+            std::time::Duration::from_millis(3000),
+        ) {
+            Ok(tcp) => tcp,
+            Err(_err) => return Err(Error::TimeoutToRemote(remote.name().to_owned())),
+        };
+        trace!("TCP Stream established, creating session");
         let mut session = Session::new()?;
+        session.set_timeout(CONNECTION_TIMEOUT);
         session.set_tcp_stream(tcp);
         session.handshake()?;
         session.userauth_agent(remote.user())?;
