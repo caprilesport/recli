@@ -3,6 +3,8 @@ use anyhow::Result;
 use remotelib::connection::SshConnection;
 use remotelib::jobs::Jobs;
 
+use tracing::error;
+
 #[derive(Debug, clap::Args)]
 /// Fetches the latest status for all tracked jobs from the remotes.
 ///
@@ -25,7 +27,13 @@ pub fn execute(args: Args, ctx: &Context) -> Result<()> {
         }
         None => {
             for remote in &ctx.config.remotes {
-                let connection = SshConnection::new(&remote)?;
+                let connection = match SshConnection::new(&remote) {
+                    Ok(sshconnection) => sshconnection,
+                    Err(err) => {
+                        error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+                        continue;
+                    }
+                };
                 let statuses = remote.status(&connection)?;
                 jobs.update(statuses, remote.name());
             }

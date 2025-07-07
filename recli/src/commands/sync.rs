@@ -1,7 +1,7 @@
 use remotelib::connection::SshConnection;
 use remotelib::jobs::Jobs;
 
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(clap::Args, Debug)]
 /// Downloads output files for finished jobs.
@@ -38,7 +38,13 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
             } else {
                 for (remote_name, ids) in syncable_jobs {
                     let remote = ctx.config.get_remote(&remote_name)?;
-                    let connection = SshConnection::new(&remote)?;
+                    let connection = match SshConnection::new(&remote) {
+                        Ok(sshconnection) => sshconnection,
+                        Err(err) => {
+                            error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+                            continue;
+                        }
+                    };
                     for id in ids {
                         info!("Syncing job {}", id);
                         jobs.sync_job(&id, &remote, &connection, true)?;
