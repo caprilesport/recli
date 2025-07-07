@@ -91,6 +91,57 @@ impl SshConnection {
         session.userauth_agent(remote.user())?;
         Ok(SshConnection { session })
     }
+
+    /// Checks if a local file should be uploaded by comparing modification times.
+    fn should_upload_file(
+        local_path: &Path,
+        remote_files: &std::collections::HashMap<String, u64>,
+    ) -> Result<bool, std::io::Error> {
+        let file_name = local_path.file_name().unwrap().to_str().unwrap().to_string();
+        let local_meta = std::fs::metadata(local_path)?;
+        let local_mtime = local_meta
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        if let Some(remote_mtime) = remote_files.get(&file_name) {
+            if local_mtime > *remote_mtime {
+                debug!("Local file {:?} is newer, uploading.", local_path);
+                Ok(true)
+            } else {
+                debug!("Remote file {:?} is up-to-date, skipping.", file_name);
+                Ok(false)
+            }
+        } else {
+            Ok(true)
+        }
+    }
+
+    /// Checks if a remote file should be downloaded by comparing modification times.
+    fn should_download_file(
+        remote_stat: &ssh2::FileStat,
+        local_path: &Path,
+    ) -> Result<bool, std::io::Error> {
+        if local_path.exists() {
+            let local_meta = std::fs::metadata(local_path)?;
+            let local_mtime = local_meta
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let remote_mtime = remote_stat.mtime.unwrap_or(0);
+            if remote_mtime > local_mtime {
+                debug!("Remote file {:?} is newer, downloading.", local_path);
+                Ok(true)
+            } else {
+                debug!("Local file {:?} is up-to-date, skipping.", local_path);
+                Ok(false)
+            }
+        } else {
+            Ok(true)
+        }
+    }
 }
 
 impl RemoteConnection for SshConnection {
@@ -134,16 +185,29 @@ impl RemoteConnection for SshConnection {
         ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
+        let remote_files: std::collections::HashMap<String, u64> = sftp
+            .readdir(remote_dir)?
+            .into_iter()
+            .filter_map(|(path, stat)| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| (name.to_string(), stat.mtime.unwrap_or(0)))
+            })
+            .collect();
+
         for file_path in local_paths {
             if ignore.iter().any(|p| p.matches_path(file_path)) {
                 debug!("Ignoring {:?} due to ignore pattern", file_path);
                 continue;
             }
-            debug!("Uploading {:?} to {:?}", file_path, remote_dir);
-            let mut local_file = std::fs::File::open(file_path)?;
-            let remote_path = remote_dir.join(file_path.file_name().unwrap());
-            let mut remote_file = sftp.create(remote_path.as_path())?;
-            std::io::copy(&mut local_file, &mut remote_file)?;
+
+            if Self::should_upload_file(file_path, &remote_files)? {
+                debug!("Uploading {:?} to {:?}", file_path, remote_dir);
+                let mut local_file = std::fs::File::open(file_path)?;
+                let remote_path = remote_dir.join(file_path.file_name().unwrap());
+                let mut remote_file = sftp.create(remote_path.as_path())?;
+                std::io::copy(&mut local_file, &mut remote_file)?;
+            }
         }
         Ok(())
     }
@@ -170,10 +234,12 @@ impl RemoteConnection for SshConnection {
                     .starts_with(basename)
             {
                 let local_path = local_dir.join(remote_path.file_name().unwrap());
-                let mut remote_file = sftp.open(&remote_path)?;
-                let mut local_file = std::fs::File::create(&local_path)?;
-                debug!("Downloading {:?}", remote_path);
-                std::io::copy(&mut remote_file, &mut local_file)?;
+                if Self::should_download_file(&stat, &local_path)? {
+                    let mut remote_file = sftp.open(&remote_path)?;
+                    let mut local_file = std::fs::File::create(&local_path)?;
+                    debug!("Downloading {:?}", remote_path);
+                    std::io::copy(&mut remote_file, &mut local_file)?;
+                }
             }
         }
         Ok(())
