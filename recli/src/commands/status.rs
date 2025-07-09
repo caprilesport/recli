@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use std::io::{IsTerminal, Write};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
@@ -100,20 +101,30 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     }
 
     let jobs = query.iter().collect();
+    let mut table = create_status_table(jobs, args.show_id);
+    let mut stdout = std::io::stdout().lock();
 
-    let table = create_status_table(jobs, args.show_id);
-    println!("{}", table);
+    if stdout.is_terminal() {
+        table
+            .with(tabled::settings::Style::rounded())
+            .with(tabled::settings::Alignment::center());
+    } else {
+        table.with(tabled::settings::Style::empty());
+    }
+
+    write!(stdout, "{}", table.to_string())?;
 
     Ok(())
 }
 
-pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
+pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
     let mut builder = Builder::default();
     let mut headers = vec![
         "Name",
+        "File",
         "Project",
         "St",
-        "Synced",
+        "Sync",
         "Remote",
         "Submit time",
         "Sync time",
@@ -125,22 +136,23 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        let synced = if j.synced() { "Yes" } else { "No" };
+        let synced = if j.synced() { "\u{2713}" } else { "\u{2715}" };
         let id = j.id().to_string();
         let submit_time = j
             .submit_time()
             .with_timezone(&chrono::Local)
-            .format("%m-%d %H:%M")
+            .format("%Y-%m-%d %H:%M")
             .to_string();
         let sync_time = match j.sync_time() {
             Some(date) => date
                 .with_timezone(&chrono::Local)
-                .format("%m-%d %H:%M")
+                .format("%Y-%m-%d %H:%M")
                 .to_string(),
             None => "None".to_string(),
         };
         let mut row = vec![
             j.name(),
+            j.basename(),
             j.project(),
             j.status().as_str(),
             synced,
@@ -155,7 +167,7 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
         builder.push_record(row);
     });
 
-    let mut table = builder.build();
-    table.with(tabled::settings::Style::rounded());
-    table.to_string()
+    let table = builder.build();
+
+    table
 }
