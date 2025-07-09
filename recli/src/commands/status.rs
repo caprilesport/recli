@@ -111,6 +111,7 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     let mut builder = Builder::default();
     let mut headers = vec![
         "Name",
+        "File",
         "Project",
         "St",
         "Synced",
@@ -130,17 +131,18 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
         let submit_time = j
             .submit_time()
             .with_timezone(&chrono::Local)
-            .format("%m-%d %H:%M")
+            .format("%Y-%m-%d %H:%M")
             .to_string();
         let sync_time = match j.sync_time() {
             Some(date) => date
                 .with_timezone(&chrono::Local)
-                .format("%m-%d %H:%M")
+                .format("%Y-%m-%d %H:%M")
                 .to_string(),
             None => "None".to_string(),
         };
         let mut row = vec![
             j.name(),
+            j.basename(),
             j.project(),
             j.status().as_str(),
             synced,
