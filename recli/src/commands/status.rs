@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
@@ -49,13 +50,23 @@ pub struct Args {
     pub status: Option<remotelib::job::JobStatus>,
 
     /// Filter by synced status
-    #[arg(long, action)]
-    pub synced: Option<bool>,
+    #[arg(long, action, default_value_t = false)]
+    pub synced: bool,
 }
 
 pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
-    let jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
+
+    if !args.all {
+        let twenty_four_hours_ago = Utc::now() - Duration::hours(24);
+        jobs.retain(|j| {
+            !j.synced()
+                || (j.synced() && j.sync_time().map_or(false, |st| st > twenty_four_hours_ago))
+        });
+    }
+
     let mut query = jobs.query();
+
     if let Some(id) = args.id {
         query.with_id(&id);
     }
@@ -84,15 +95,11 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
         query = query.with_status(&status);
     }
 
-    if let Some(synced) = &args.synced {
-        query = query.synced(*synced);
+    if args.synced {
+        query = query.synced(args.synced);
     }
 
-    if !args.all {
-        query = query.synced(false);
-    }
-
-    let jobs: Vec<&Job> = query.iter().collect();
+    let jobs = query.iter().collect();
 
     let table = create_status_table(jobs, args.show_id);
     println!("{}", table);
@@ -102,7 +109,15 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
 
 pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     let mut builder = Builder::default();
-    let mut headers = vec!["Name", "Project", "St", "Synced", "Remote", "Submit time"];
+    let mut headers = vec![
+        "Name",
+        "Project",
+        "St",
+        "Synced",
+        "Remote",
+        "Submit time",
+        "Sync time",
+    ];
     if with_id {
         headers.push("Remote ID");
         headers.push("ID");
@@ -110,9 +125,20 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        let synced = if j.synced() { "Y" } else { "N" };
+        let synced = if j.synced() { "Yes" } else { "No" };
         let id = j.id().to_string();
-        let submit_time = j.submit_time().format("%Y-%m-%d %H:%M:%S").to_string();
+        let submit_time = j
+            .submit_time()
+            .with_timezone(&chrono::Local)
+            .format("%m-%d %H:%M")
+            .to_string();
+        let sync_time = match j.sync_time() {
+            Some(date) => date
+                .with_timezone(&chrono::Local)
+                .format("%m-%d %H:%M")
+                .to_string(),
+            None => "None".to_string(),
+        };
         let mut row = vec![
             j.name(),
             j.project(),
@@ -120,6 +146,7 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
             synced,
             j.remote(),
             &submit_time,
+            &sync_time,
         ];
         if with_id {
             row.push(j.remote_id());
