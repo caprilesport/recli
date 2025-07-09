@@ -156,7 +156,8 @@ pub struct JobQuery<'a> {
     name: Option<Match<'a>>,
     basename: Option<Match<'a>>,
     project: Option<Match<'a>>,
-    // working_dir: Option<&'a PathBuf>,
+    submit_time_after: Option<DateTime<Utc>>,
+    sync_time_after: Option<DateTime<Utc>>,
 }
 
 impl<'a> JobQuery<'a> {
@@ -171,6 +172,8 @@ impl<'a> JobQuery<'a> {
             name: None,
             basename: None,
             project: None,
+            submit_time_after: None,
+            sync_time_after: None,
         }
     }
 
@@ -214,6 +217,16 @@ impl<'a> JobQuery<'a> {
         self
     }
 
+    pub fn with_submit_time_after(mut self, time: DateTime<Utc>) -> Self {
+        self.submit_time_after = Some(time);
+        self
+    }
+
+    pub fn with_sync_time_after(mut self, time: DateTime<Utc>) -> Self {
+        self.sync_time_after = Some(time);
+        self
+    }
+
     pub fn iter(self) -> impl Iterator<Item = &'a Job> {
         let Self {
             jobs,
@@ -225,6 +238,8 @@ impl<'a> JobQuery<'a> {
             name,
             basename,
             project,
+            submit_time_after,
+            sync_time_after,
         } = self;
 
         let check = |value: &str, matcher: &Option<Match<'a>>| {
@@ -243,6 +258,8 @@ impl<'a> JobQuery<'a> {
             let name_match = check(job.name(), &name);
             let basename_match = check(job.basename(), &basename);
             let project_match = check(job.project(), &project);
+            let submit_time_match = submit_time_after.map_or(true, |t| *job.submit_time() > t);
+            let sync_time_match = sync_time_after.map_or(true, |t| job.sync_time().map_or(false, |st| st > t));
 
             id_match
                 && synced_match
@@ -252,6 +269,8 @@ impl<'a> JobQuery<'a> {
                 && name_match
                 && basename_match
                 && project_match
+                && submit_time_match
+                && sync_time_match
         })
     }
 }
