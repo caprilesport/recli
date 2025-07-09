@@ -102,24 +102,27 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
 
 pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> String {
     let mut builder = Builder::default();
-    let mut headers = vec!["Name", "Project", "St", "Synced", "Remote", "Remote ID"];
+    let mut headers = vec!["Name", "Project", "St", "Synced", "Remote", "Submit time"];
     if with_id {
+        headers.push("Remote ID");
         headers.push("ID");
     }
     builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        let synced = j.synced().to_string();
+        let synced = if j.synced() { "Y" } else { "N" };
         let id = j.id().to_string();
+        let submit_time = j.submit_time().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut row = vec![
             j.name(),
             j.project(),
             j.status().as_str(),
-            &synced,
+            synced,
             j.remote(),
-            j.remote_id(),
+            &submit_time,
         ];
         if with_id {
+            row.push(j.remote_id());
             row.push(&id);
         }
         builder.push_record(row);

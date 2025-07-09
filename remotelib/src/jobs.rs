@@ -1,4 +1,5 @@
 use crate::job::{Error, Job, JobStatus};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use tracing::info;
@@ -99,6 +100,7 @@ impl Jobs {
         info!("Syncing job {} @ {}", job.name(), job.remote());
 
         connection.download_files(&remote_dir, &job.working_dir(), job.basename(), ignore)?;
+        job.set_sync_time(chrono::Utc::now());
 
         if update_status {
             job.set_synced_status(true);

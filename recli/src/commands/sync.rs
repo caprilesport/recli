@@ -52,7 +52,6 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
                         }
                     };
                     for id in ids {
-                        info!("Syncing job {}", id);
                         jobs.sync_job(&id, &remote, &connection, true, &ctx.config.ignore)?;
                     }
                 }

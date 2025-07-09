@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use thiserror;
 use uuid::Uuid;
@@ -49,8 +50,8 @@ pub struct Job {
     working_dir: PathBuf,
     project: String,
     status: JobStatus,
-    submit_time: String,
-    finish_time: Option<String>,
+    submit_time: DateTime<Utc>,
+    sync_time: Option<DateTime<Utc>>,
     synced: bool,
 }
 
@@ -64,10 +65,6 @@ impl Job {
         let cwd = std::env::current_dir().unwrap();
         let project = Self::find_project(&cwd)?;
         let name = Job::get_name(&project, &basename).unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
 
         Ok(Self {
             id,
@@ -78,8 +75,8 @@ impl Job {
             working_dir: cwd,
             project,
             status: JobStatus::Queued,
-            submit_time: now.to_string(),
-            finish_time: None,
+            submit_time: Utc::now(),
+            sync_time: None,
             synced: false,
         })
     }
@@ -92,7 +89,7 @@ impl Job {
         &self.remote_id
     }
 
-    pub fn submit_time(&self) -> &str {
+    pub fn submit_time(&self) -> &DateTime<Utc> {
         &self.submit_time
     }
 
@@ -130,6 +127,14 @@ impl Job {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn set_sync_time(&mut self, time: DateTime<Utc>) {
+        self.sync_time = Some(time);
+    }
+
+    pub fn sync_time(&self) -> &Option<DateTime<Utc>> {
+        &self.sync_time
     }
 
     fn get_name(project: &str, basename: &str) -> std::io::Result<String> {
@@ -242,8 +247,8 @@ mod tests {
             working_dir: PathBuf::from("/tmp"),
             project: "my_project".to_string(),
             status: JobStatus::Running,
-            submit_time: "1234567890".to_string(),
-            finish_time: None,
+            submit_time: Utc::now(),
+            sync_time: None,
             synced: false,
         };
 
