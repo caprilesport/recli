@@ -1,4 +1,3 @@
-use dirs;
 use remotelib::remote::Remote;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
@@ -48,8 +47,7 @@ impl Config {
     pub fn get_remote(&self, remote: &str) -> Result<&Remote, ConfigError> {
         self.remotes
             .iter()
-            .filter(|r| r.name() == remote)
-            .next()
+            .find(|r| r.name() == remote)
             .ok_or(ConfigError::RemoteNotFound(remote.to_string()))
     }
 

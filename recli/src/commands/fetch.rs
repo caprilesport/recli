@@ -21,13 +21,13 @@ pub fn execute(args: Args, ctx: &Context) -> Result<()> {
     match args.remote {
         Some(remote_name) => {
             let remote = &ctx.config.get_remote(&remote_name)?;
-            let connection = SshConnection::new(&remote)?;
+            let connection = SshConnection::new(remote)?;
             let statuses = remote.status(&connection)?;
             jobs.update(statuses, remote.name());
         }
         None => {
             for remote in &ctx.config.remotes {
-                let connection = match SshConnection::new(&remote) {
+                let connection = match SshConnection::new(remote) {
                     Ok(sshconnection) => sshconnection,
                     Err(err) => {
                         error!("Failed to connect to {}, caused by: {}", remote.name(), err);

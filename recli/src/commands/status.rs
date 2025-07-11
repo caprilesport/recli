@@ -62,7 +62,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
         let twenty_four_hours_ago = Utc::now() - Duration::hours(24);
         jobs.retain(|j| {
             !j.synced()
-                || (j.synced() && j.sync_time().map_or(false, |st| st > twenty_four_hours_ago))
+                || (j.synced() && j.sync_time().is_some_and(|st| st > twenty_four_hours_ago))
         });
     }
 
@@ -73,27 +73,27 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     }
 
     if let Some(name) = &args.name {
-        query = query.with_name(Match::Contains(&name));
+        query = query.with_name(Match::Contains(name));
     }
 
     if let Some(remote) = &args.remote {
-        query = query.with_remote(Match::Contains(&remote));
+        query = query.with_remote(Match::Contains(remote));
     }
 
     if let Some(remote_id) = &args.remote_id {
-        query = query.with_remote_id(&remote_id);
+        query = query.with_remote_id(remote_id);
     }
 
     if let Some(basename) = &args.basename {
-        query = query.with_basename(Match::Contains(&basename));
+        query = query.with_basename(Match::Contains(basename));
     }
 
     if let Some(project) = &args.project {
-        query = query.with_project(Match::Contains(&project));
+        query = query.with_project(Match::Contains(project));
     }
 
     if let Some(status) = &args.status {
-        query = query.with_status(&status);
+        query = query.with_status(status);
     }
 
     if args.synced {
@@ -167,7 +167,5 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
         builder.push_record(row);
     });
 
-    let table = builder.build();
-
-    table
+    builder.build()
 }

@@ -24,10 +24,10 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
         Some(id) => {
             if let Some(job) = jobs.find_by_id(&id) {
                 let remote = ctx.config.get_remote(job.remote())?;
-                let connection = SshConnection::new(&remote)?;
+                let connection = SshConnection::new(remote)?;
                 jobs.sync_job(
                     &id,
-                    &remote,
+                    remote,
                     &connection,
                     args.update_status,
                     &ctx.config.ignore,
@@ -44,7 +44,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
             } else {
                 for (remote_name, ids) in syncable_jobs {
                     let remote = ctx.config.get_remote(&remote_name)?;
-                    let connection = match SshConnection::new(&remote) {
+                    let connection = match SshConnection::new(remote) {
                         Ok(sshconnection) => sshconnection,
                         Err(err) => {
                             error!("Failed to connect to {}, caused by: {}", remote.name(), err);
@@ -52,7 +52,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
                         }
                     };
                     for id in ids {
-                        jobs.sync_job(&id, &remote, &connection, true, &ctx.config.ignore)?;
+                        jobs.sync_job(&id, remote, &connection, true, &ctx.config.ignore)?;
                     }
                 }
             }

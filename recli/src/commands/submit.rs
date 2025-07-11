@@ -21,7 +21,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     let remote = ctx.config.get_remote(&args.remote)?;
     let file_stem = args.inpfile.file_stem().unwrap().to_str().unwrap();
 
-    let connection = match SshConnection::new(&remote) {
+    let connection = match SshConnection::new(remote) {
         Ok(sshconnection) => sshconnection,
         Err(err) => {
             error!("Failed to connect to {}, caused by: {}", remote.name(), err);

@@ -38,7 +38,7 @@ impl Jobs {
             return Ok(Jobs { jobs: Vec::new() });
         }
 
-        let file = std::fs::File::open(&json_file_path)?;
+        let file = std::fs::File::open(json_file_path)?;
         if file.metadata()?.len() == 0 {
             return Ok(Jobs { jobs: Vec::new() });
         }
@@ -57,12 +57,10 @@ impl Jobs {
             let old_status = *job.status();
             let status = statuses.get(job.remote_id());
 
-            match status {
-                Some(st) => {
-                    job.set_status(*st);
-                }
-                None => (),
+            if let Some(st) = status {
+                job.set_status(*st);
             }
+
             if job.status() != &old_status {
                 changed_jobs.push(job.clone());
             }
@@ -95,11 +93,11 @@ impl Jobs {
             .iter_mut()
             .find(|j| j.id() == id)
             .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
-        let remote_dir = remote.work_dir().join(&id.to_string());
+        let remote_dir = remote.work_dir().join(id.to_string());
 
         info!("Syncing job {} @ {}", job.name(), job.remote());
 
-        connection.download_files(&remote_dir, &job.working_dir(), job.basename(), ignore)?;
+        connection.download_files(&remote_dir, job.working_dir(), job.basename(), ignore)?;
         job.set_sync_time(chrono::Utc::now());
 
         if update_status {
@@ -254,24 +252,24 @@ impl<'a> JobQuery<'a> {
         } = self;
 
         let check = |value: &str, matcher: &Option<Match<'a>>| {
-            matcher.as_ref().map_or(true, |m| match m {
+            matcher.as_ref().is_none_or(|m| match m {
                 Match::Exact(val) => value == *val,
                 Match::Contains(val) => value.contains(val),
             })
         };
 
         jobs.iter().filter(move |job| {
-            let id_match = id.map_or(true, |id| id == job.id());
-            let synced_match = synced.map_or(true, |synced| synced == job.synced());
-            let status_match = status.map_or(true, |st| st == job.status());
-            let remote_id_match = remote_id.map_or(true, |id| id == job.remote_id());
+            let id_match = id.is_none_or(|id| id == job.id());
+            let synced_match = synced.is_none_or(|synced| synced == job.synced());
+            let status_match = status.is_none_or(|st| st == job.status());
+            let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
             let remote_match = check(job.remote(), &remote);
             let name_match = check(job.name(), &name);
             let basename_match = check(job.basename(), &basename);
             let project_match = check(job.project(), &project);
-            let submit_time_match = submit_time_after.map_or(true, |t| *job.submit_time() > t);
+            let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
-                sync_time_after.map_or(true, |t| job.sync_time().map_or(false, |st| st > t));
+                sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
 
             id_match
                 && synced_match
