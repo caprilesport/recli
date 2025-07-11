@@ -21,7 +21,12 @@ impl QueueManager {
                     .and_then(|caps| caps.get(1))
                     .map_or_else(|| "".to_string(), |m| m.as_str().to_string())
             }
-            Self::Slurm => output.trim().to_string(),
+            Self::Slurm => {
+                let re = Regex::new(r"(\d+)").unwrap();
+                re.captures(&output)
+                    .and_then(|caps| caps.get(1))
+                    .map_or_else(|| "".to_string(), |m| m.as_str().to_string())
+            }
         }
     }
 
@@ -36,10 +41,10 @@ impl QueueManager {
                         let job_id = parts[0].to_string();
                         let status = parts[9].to_string();
                         let job_status = match status.as_str() {
-                            "Q" | "Queued" => JobStatus::Queued,
-                            "R" | "Running" => JobStatus::Running,
-                            "F" | "Success" | "Killed" => JobStatus::Finished,
-                            "E" | "Failed" => JobStatus::Error,
+                            "Q" => JobStatus::Queued,
+                            "R" => JobStatus::Running,
+                            "F" => JobStatus::Finished,
+                            "E" => JobStatus::Error,
                             _ => JobStatus::Undefined,
                         };
                         statuses.insert(job_id, job_status);
@@ -67,7 +72,25 @@ impl QueueManager {
                     }
                 }
             }
-            Self::Slurm => (),
+            Self::Slurm => {
+                for line in output.lines().skip(2) {
+                    if line.contains("batch") {
+                        continue;
+                    } else {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        let job_id = parts[0].to_string();
+                        let status = parts[4].to_string();
+                        let job_status = match status.as_str() {
+                            "PENDING" => JobStatus::Queued,
+                            "RUNNING" => JobStatus::Running,
+                            "COMPLETED" => JobStatus::Finished,
+                            "CANCELLED" | "CANCELLED+" => JobStatus::Error,
+                            _ => JobStatus::Undefined,
+                        };
+                        statuses.insert(job_id, job_status);
+                    }
+                }
+            }
         }
 
         statuses
@@ -77,7 +100,7 @@ impl QueueManager {
         match self {
             Self::PBS => format!("qstat -u {} -x", user),
             Self::Pueue => "pueue status".to_string(),
-            Self::Slurm => "".to_string(),
+            Self::Slurm => "sacct".to_string(),
         }
     }
 
