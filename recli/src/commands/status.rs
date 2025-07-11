@@ -112,7 +112,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
         table.with(tabled::settings::Style::empty());
     }
 
-    write!(stdout, "{}", table.to_string())?;
+    writeln!(stdout, "{}", table)?;
 
     Ok(())
 }
@@ -136,7 +136,7 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
     builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        let synced = if j.synced() { "\u{2713}" } else { "\u{2715}" };
+        let synced = if j.synced() { "Yes" } else { "Nop" };
         let id = j.id().to_string();
         let submit_time = j
             .submit_time()

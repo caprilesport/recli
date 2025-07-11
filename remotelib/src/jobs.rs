@@ -127,6 +127,17 @@ impl Jobs {
                     .push(*job.id())
             });
 
+        self.query()
+            .with_status(&JobStatus::Error)
+            .synced(false)
+            .iter()
+            .for_each(|job| {
+                jobs_by_remote
+                    .entry(job.remote().to_string())
+                    .or_default()
+                    .push(*job.id())
+            });
+
         jobs_by_remote
     }
 
@@ -259,7 +270,8 @@ impl<'a> JobQuery<'a> {
             let basename_match = check(job.basename(), &basename);
             let project_match = check(job.project(), &project);
             let submit_time_match = submit_time_after.map_or(true, |t| *job.submit_time() > t);
-            let sync_time_match = sync_time_after.map_or(true, |t| job.sync_time().map_or(false, |st| st > t));
+            let sync_time_match =
+                sync_time_after.map_or(true, |t| job.sync_time().map_or(false, |st| st > t));
 
             id_match
                 && synced_match
