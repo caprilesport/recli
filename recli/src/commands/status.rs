@@ -59,10 +59,9 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     if !args.all {
-        let twenty_four_hours_ago = Utc::now() - Duration::hours(24);
+        let two_days_ago = Utc::now() - Duration::hours(48);
         jobs.retain(|j| {
-            !j.synced()
-                || (j.synced() && j.sync_time().is_some_and(|st| st > twenty_four_hours_ago))
+            !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| st > two_days_ago))
         });
     }
 
