@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, trace};
 
-const CONNECTION_TIMEOUT: u32 = 3000;
+const CONNECTION_TIMEOUT: u32 = 9000;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
@@ -97,7 +97,12 @@ impl SshConnection {
         local_path: &Path,
         remote_files: &std::collections::HashMap<String, u64>,
     ) -> Result<bool, std::io::Error> {
-        let file_name = local_path.file_name().unwrap().to_str().unwrap().to_string();
+        let file_name = local_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         let local_meta = std::fs::metadata(local_path)?;
         let local_mtime = local_meta
             .modified()?
