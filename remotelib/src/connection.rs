@@ -12,11 +12,8 @@ const CONNECTION_TIMEOUT: u32 = 9000;
 pub enum Error {
     #[error("Connection to remote {0} timed out.")]
     TimeoutToRemote(String),
-    #[error(
-        "Failed to create remote dir:
-{0}"
-    )]
-    FailedToCreateDirError(#[from] ssh2::Error),
+    #[error("Ssh2 failed, cause by: {0}")]
+    Ssh2Error(#[from] ssh2::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error),
     #[error(
