@@ -34,8 +34,17 @@ pub fn execute(args: Args, ctx: &Context) -> Result<()> {
                         continue;
                     }
                 };
-                let statuses = remote.status(&connection)?;
-                jobs.update(statuses, remote.name());
+                match remote.status(&connection) {
+                    Ok(statuses) => jobs.update(statuses, remote.name()),
+                    Err(e) => {
+                        error!(
+                            "Failed to fetch statuses at {}, caused by {}",
+                            remote.name(),
+                            e
+                        );
+                        continue;
+                    }
+                }
             }
         }
     }
