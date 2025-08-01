@@ -74,21 +74,17 @@ impl QueueManager {
             }
             Self::Slurm => {
                 for line in output.lines().skip(2) {
-                    if line.contains("batch") {
-                        continue;
-                    } else {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        let job_id = parts[0].to_string();
-                        let status = parts[4].to_string();
-                        let job_status = match status.as_str() {
-                            "PENDING" => JobStatus::Queued,
-                            "RUNNING" => JobStatus::Running,
-                            "COMPLETED" => JobStatus::Finished,
-                            "CANCELLED" | "CANCELLED+" => JobStatus::Error,
-                            _ => JobStatus::Undefined,
-                        };
-                        statuses.insert(job_id, job_status);
-                    }
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    let job_id = parts[0].to_string();
+                    let status = parts[4].to_string();
+                    let job_status = match status.as_str() {
+                        "PENDING" => JobStatus::Queued,
+                        "RUNNING" => JobStatus::Running,
+                        "COMPLETED" => JobStatus::Finished,
+                        "CANCELLED" | "CANCELLED+" => JobStatus::Error,
+                        _ => JobStatus::Undefined,
+                    };
+                    statuses.insert(job_id, job_status);
                 }
             }
         }
@@ -100,7 +96,8 @@ impl QueueManager {
         match self {
             Self::PBS => format!("qstat -u {} -x", user),
             Self::Pueue => "pueue status".to_string(),
-            Self::Slurm => "sacct".to_string(),
+            //TODO: check this starttime
+            Self::Slurm => "sacct -X --starttime 1970-01-01".to_string(),
         }
     }
 
