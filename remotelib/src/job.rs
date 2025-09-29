@@ -13,8 +13,7 @@ pub enum Error {
     Ssh(#[from] crate::connection::Error),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    // TODO:Improve this error message
-    #[error("Serde failed {0}")]
+    #[error("Failed to serialize job database {0}")]
     JsonError(#[from] serde_json::Error),
 }
 
