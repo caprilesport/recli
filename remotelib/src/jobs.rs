@@ -5,6 +5,9 @@ use std::ops::{Deref, DerefMut};
 use tracing::info;
 use uuid::Uuid;
 
+/// A collection of `Job`s that provides centralized management and operations.
+///
+/// This is the primary interface for interacting with jobs. The `Jobs` container provides methods for persistence, querying, synchronization, and batch operations on job collections.
 #[derive(Debug, Clone)]
 pub struct Jobs {
     jobs: Vec<Job>,
@@ -25,6 +28,18 @@ impl DerefMut for Jobs {
 }
 
 impl Jobs {
+    /// Saves the job collection to a JSON file at the specified path.
+    ///
+    /// This method serializes the entire job collection to JSON format and writes it to the given file path. If the file already exists, it will be overwritten.
+    ///
+    /// # Errors
+    /// - If file serialization fails will throw a serde_json::Error
+    /// - File creation may fail in some platforms if the directory does not exist
+    ///
+    /// # Examples
+    /// ```
+    /// jobs.save_jobs(Path::new("jobs.json"))?;
+    /// ```
     pub fn save_jobs(&self, json_file_path: &std::path::Path) -> Result<(), Error> {
         tracing::debug!("Saving jobs to {:?}", json_file_path);
         let file = std::fs::File::create(json_file_path)?;
@@ -32,6 +47,18 @@ impl Jobs {
         Ok(())
     }
 
+    /// Loads a job collection from a JSON file at the specified path.
+    ///
+    /// If the file doesn't exist or is empty, returns an empty job collection.
+    ///
+    /// # Errors
+    /// - If file deserialization fails will throw a serde_json::Error
+    /// The above is mainly due to a malformed JSON file, which may happen if the user manually edits the file for some reason.
+    ///
+    /// # Examples
+    /// ```
+    /// let jobs = Jobs::load_jobs(Path::new("jobs.json"))?;
+    /// ```
     pub fn load_jobs(json_file_path: &std::path::Path) -> Result<Self, Error> {
         tracing::debug!("Loading jobs from {:?}", json_file_path);
         if !json_file_path.exists() {
@@ -50,6 +77,16 @@ impl Jobs {
         Ok(Jobs { jobs })
     }
 
+    /// Updates job statuses based on a provided status map and logs changes.
+    ///
+    /// Compares current job statuses with provided statuses and updates jobs where the remote status differs. Logs all status changes for monitoring purposes.
+    ///
+    /// # Examples
+    /// ```
+    /// let mut status_map = HashMap::new();
+    /// status_map.insert("job123".to_string(), JobStatus::Finished);
+    /// jobs.update(status_map, "remote-cluster");
+    /// ```
     pub fn update(&mut self, statuses: HashMap<String, JobStatus>, remotename: &str) {
         let mut changed_jobs = Vec::new();
 
@@ -81,6 +118,11 @@ impl Jobs {
         }
     }
 
+    /// Synchronizes a specific job with its remote counterpart.
+    ///
+    /// Downloads files from the remote working directory to the local working
+    /// directory and updates synchronization metadata. Optionally updates the
+    /// job's synced status.
     pub fn sync_job(
         &mut self,
         id: &Uuid,
@@ -111,6 +153,19 @@ impl Jobs {
         self.jobs.iter().find(|j| j.id() == id)
     }
 
+    /// Returns a map of syncable jobs grouped by remote system.
+    ///
+    /// Identifies jobs that are in terminal states (Finished or Error) and
+    /// haven't been synced yet. The result is organized by remote system
+    /// for batch processing.
+    ///
+    /// # Examples
+    /// ```
+    /// let syncable = jobs.syncable();
+    /// for (remote, job_ids) in syncable {
+    ///     println!("Remote {} has {} jobs to sync", remote, job_ids.len());
+    /// }
+    /// ```
     pub fn syncable(&self) -> HashMap<String, Vec<Uuid>> {
         let mut jobs_by_remote: HashMap<String, Vec<Uuid>> = HashMap::new();
 
@@ -139,10 +194,14 @@ impl Jobs {
         jobs_by_remote
     }
 
+    /// Creates a new query builder for filtering and searching jobs.
+    ///
+    /// Returns a `JobQuery` instance
     pub fn query(&self) -> JobQuery {
         JobQuery::new(&self.jobs)
     }
 
+    // TODO: use this to create a new job instead of delegating it to a Job::new? This way the `Jobs` struct becomes de standard for interacting with everything job related...!
     pub fn add(&mut self, job: Job) {
         self.jobs.push(job);
     }
@@ -154,6 +213,21 @@ pub enum Match<'a> {
     Contains(&'a str),
 }
 
+/// A query builder for filtering and searching jobs.
+///
+/// `JobQuery` provides a builder interface for constructing complex queries against a job collection. Each method adds a filter condition, and filters are combined with AND logic.
+///
+/// # Examples
+/// ```
+/// // Find all unsynced finished jobs from a specific remote submitted after a certain time
+/// let results: Vec<&Job> = jobs.query()
+///     .with_status(&JobStatus::Finished)
+///     .synced(false)
+///     .with_remote(Match::Exact("cluster-a"))
+///     .with_submit_time_after(cutoff_time)
+///     .iter()
+///     .collect();
+/// ```
 #[derive(Copy, Clone)]
 pub struct JobQuery<'a> {
     jobs: &'a [Job],
@@ -170,6 +244,7 @@ pub struct JobQuery<'a> {
 }
 
 impl<'a> JobQuery<'a> {
+    /// Creates a new query builder for the given job slice.
     fn new(jobs: &'a [Job]) -> Self {
         Self {
             jobs,
@@ -236,6 +311,17 @@ impl<'a> JobQuery<'a> {
         self
     }
 
+    /// Executes the query and returns an iterator over matching jobs.
+    ///
+    /// Applies all configured filters and returns an iterator that yields
+    /// references to jobs that match all conditions.
+    ///
+    /// # Examples
+    /// ```
+    /// for job in jobs.query().with_status(&JobStatus::Running).iter() {
+    ///     println!("Running job: {}", job.name());
+    /// }
+    /// ```
     pub fn iter(self) -> impl Iterator<Item = &'a Job> {
         let Self {
             jobs,

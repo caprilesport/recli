@@ -39,6 +39,14 @@ mod uuid_as_string {
     }
 }
 
+/// Main abstraction for a `Job`.
+///
+/// The main referral unit in any job is it's UUID, to interact with jobs throught the application this is the preferred way to refer to a job.
+///
+/// Beyond information that is related to each job, such as in which remote it's being ran, what is it's status, it's remote ID, etc., we also hold to which project this belongs.
+/// The standard that was taken for a project to be considered by recli is it should have an empty .recli file in it's root folder. This way one can easily query job's by a project.
+// TODO: allow jobs to be submitted without a parent project, and use the complete path to refer to it. In the project field, we should just leave a "no-project" field.
+// TODO: add an optional description :)
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
     #[serde(with = "uuid_as_string")]
@@ -137,6 +145,19 @@ impl Job {
         &self.sync_time
     }
 
+    /// Get a name description for a job.
+    ///
+    /// The current standard is to join the name of the file with the relative path to it's project absoluted path
+    ///
+    ///
+    /// Examples:
+    /// If one has a project in a `/home/user/projectA` folder, and submits a job called `init.inp` in `/home/user/projectA/job1`:
+    /// let name = Jobs::get_name(&projectA).unwrap();
+    /// assert_eq!(name, String::from("projectA-job1"));
+    ///
+    /// Errors:
+    /// If the current directory doesn't have the correct permissions, this will raise a JobError::IO error.
+    // TODO: this function could be better defined possibly?
     fn get_name(project: &str) -> std::io::Result<String> {
         let cwd = std::env::current_dir()?;
 
@@ -151,6 +172,8 @@ impl Job {
         Ok(parts.join("-"))
     }
 
+    /// Continue to search parent folders until a .recli file is found.
+    /// This will exit upon reaching the system root `/`.
     fn find_project(start_path: &std::path::Path) -> Result<String, Error> {
         let mut current_path = start_path;
 
@@ -171,6 +194,16 @@ impl Job {
     }
 }
 
+/// Abstraction on status for all the supported QueueManagers.
+///
+/// Relevant documentation can be found here:
+/// [Slurm](https://slurm.schedmd.com/job_state_codes.html)
+/// [PBS](https://www.unisq.edu.au/-/media/usq/current-students/academic/research/conducting-research/eresearch-services/hpc/pbs-documentation_may17.ashx?la=en&hash=a8ba909a56c14aea7de6a4876ea9b30e)
+/// [Pueue](https://github.com/Nukesor/pueue/blob/21c6b928d0728439cf708b4fb58acca5effc1a25/pueue_lib/src/task.rs#L11)
+///
+/// The `Undefined` variant is reserved for all status that are encountered and are not defined here. This may happen mainly with different PBS versions and some status for SLURM that are currently not implemented.
+//TODO: complete this with all possible variants encoutered in the Queue managers we support.
+// Slurm, for instance, has several status descriptions which could be usefull
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy, clap::ValueEnum)]
 pub enum JobStatus {
     Queued,

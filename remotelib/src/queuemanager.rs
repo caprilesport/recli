@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Supported queue managers
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum QueueManager {
     PBS,
@@ -12,6 +13,19 @@ pub enum QueueManager {
 }
 
 impl QueueManager {
+    /// Extracts the job ID from queue manager output.
+    ///
+    /// Parses the output returned by job submission commands to extract
+    /// the unique job identifier for each queue system.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let manager = QueueManager::Slurm;
+    /// let output = "Submitted batch job 12345".to_string();
+    /// let job_id = manager.get_id(output);
+    /// assert_eq!(job_id, "12345");
+    /// ```
     pub fn get_id(&self, output: String) -> String {
         match self {
             Self::PBS => output.trim().to_string(),
@@ -30,6 +44,19 @@ impl QueueManager {
         }
     }
 
+    /// Parses status command output into job status mappings.
+    ///
+    /// Converts the raw output from queue manager status commands into
+    /// a map of job IDs to their current status. Each queue manager has
+    /// its own output format that this method knows how to parse.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let manager = QueueManager::PBS;
+    /// let output = "12345.username queue jobname user time status".to_string();
+    /// let statuses = manager.status(output);
+    /// ```
     pub fn status(&self, output: String) -> HashMap<String, JobStatus> {
         let mut statuses = HashMap::new();
 
@@ -92,6 +119,14 @@ impl QueueManager {
         statuses
     }
 
+    /// Returns the command to check job statuses for a user.
+    ///
+    /// Each queue manager has different commands and flags for retrieving
+    /// job status information.
+    ///
+    /// # Arguments
+    ///
+    /// * `user` - The username to filter jobs by (not all queue managers support this)
     pub fn status_command(&self, user: &str) -> String {
         match self {
             Self::PBS => format!("qstat -u {} -x", user),
@@ -101,6 +136,14 @@ impl QueueManager {
         }
     }
 
+    /// Returns the command to submit a job to the queue.
+    ///
+    /// Constructs the appropriate submission command for the queue manager,
+    /// including changing to the correct directory and specifying the job script.
+    /// # Arguments
+    ///
+    /// * `remote_dir` - The working directory where the job should be executed
+    /// * `job_name` - The name of the job script file to submit
     pub fn submit_command(&self, remote_dir: &Path, job_name: &str) -> String {
         match self {
             Self::PBS => format!("cd {} && qsub {} ", remote_dir.to_str().unwrap(), job_name),

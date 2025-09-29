@@ -37,12 +37,27 @@ STDERR:
 /// This abstraction allows for decoupling the runtime logic from the test logic
 pub trait RemoteConnection {
     /// Executes a command on the remote and returns its stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error::CommandError` if the command execution fails or returns a non-zero exit code.
     fn execute(&self, command: &str) -> Result<String, Error>;
 
     /// Creates a directory on the remote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error::CommandError` if the directory creation fails.
     fn mkdir(&self, path: &Path) -> Result<(), Error>;
 
-    /// Uploads a list of local files to a remote directory.
+    /// Uploads local files to a remote directory.
+    ///
+    /// Only uploads files that are newer than their remote counterparts or don't
+    /// exist remotely. Files matching ignore patterns are skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or uploading fails.
     fn upload_files(
         &self,
         local_paths: &[PathBuf],
@@ -50,7 +65,14 @@ pub trait RemoteConnection {
         ignore: &[glob::Pattern],
     ) -> Result<(), Error>;
 
-    /// Downloads files from a remote directory to a local one, based on a basename.
+    /// Downloads files from a remote directory to a local one.
+    ///
+    /// Only downloads files that start with the given basename and are newer than
+    /// their local counterparts. Files matching ignore patterns are skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file reading or downloading fails.
     fn download_files(
         &self,
         remote_dir: &Path,

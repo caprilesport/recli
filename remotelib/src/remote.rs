@@ -17,6 +17,9 @@ pub enum Error {
     IO(#[from] std::io::Error), // #[error()]
 }
 
+/// Represents a remote computational resource for job execution.
+///
+/// Contains all configuration needed to connect to and use a remote machine including connection details, working directory, and queue manager settings.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Remote {
     name: String,
@@ -35,6 +38,13 @@ impl PartialEq<&str> for Remote {
 }
 
 impl Remote {
+    /// Prepares input files for submission using the configured preparation command.
+    ///
+    /// Typically runs a local "qprep" command to generate necessary job files before uploading to the remote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the preparation command fails.
     fn prepare(&self, input_file: &std::path::Path) -> Result<(), Error> {
         let mut args = self.prepare_args.clone();
         debug!("Running command: {:?}, {:?}", "qprep", args);
@@ -60,6 +70,9 @@ impl Remote {
         &self.user
     }
 
+    /// Returns the working directory on the remote machine.
+    ///
+    /// This is the base directory where job directories will be created.
     pub fn work_dir(&self) -> &Path {
         &self.work_directory
     }
@@ -69,8 +82,14 @@ impl Remote {
     //     &self.queue_manager
     // }
 
-    /// Submits an inp_file to the remote with the specified job_id.
-    /// Returns a remote id
+    /// Submits a job to the remote queue manager.
+    ///
+    /// Prepares input files, creates a remote job directory, uploads necessary files,
+    /// and submits the job to the queue manager. Returns the remote job ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file preparation, upload, or submission fails.
     pub fn submit(
         &self,
         job_id: uuid::Uuid,
@@ -111,6 +130,14 @@ impl Remote {
         Ok(remote_id)
     }
 
+    /// Retrieves job statuses from the remote queue manager.
+    ///
+    /// Queries the queue manager for current job statuses and parses the output
+    /// into a map of job IDs to their status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the status command fails or output cannot be parsed.
     pub fn status(
         &self,
         connection: &dyn RemoteConnection,

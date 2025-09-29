@@ -34,6 +34,9 @@ enum Mode {
     Status(commands::status::Args),
 }
 
+/// Running context of the application
+///
+/// Holds the config for all the remotes registered, as well as the a the database for all the submitted jobs
 struct Context {
     config: crate::Config,
     json_file: std::path::PathBuf,
