@@ -3,16 +3,16 @@ use std::io::{IsTerminal, Write};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
-use remotelib::job::Job;
+use remotelib::job::{Job, JobStatus};
 use remotelib::jobs::{Jobs, Match};
 
-#[derive(Debug, clap::Args)]
 /// Displays the status of jobs, with optional filters.
 /// By default it doesn't show jobs that are synced
 /// To show all jobs recorded, use the -a/--all flag
 ///
 /// Shows a table of all tracked jobs. You can use the flags below to filter
 /// the jobs that are displayed.
+#[derive(Debug, clap::Args)]
 pub struct Args {
     /// Show all jobs
     #[arg(long, short, action)]
@@ -48,11 +48,15 @@ pub struct Args {
 
     /// Filter by status
     #[arg(long, short, value_enum)]
-    pub status: Option<remotelib::job::JobStatus>,
+    pub status: Option<JobStatus>,
 
-    /// Filter by synced status
+    /// Filter synced jobs
     #[arg(long, action, default_value_t = false)]
     pub synced: bool,
+
+    /// Filter non synced jobs
+    #[arg(long, action, default_value_t = false)]
+    pub not_synced: bool,
 }
 
 pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
@@ -96,7 +100,9 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     }
 
     if args.synced {
-        query = query.synced(args.synced);
+        query = query.synced(true);
+    } else if args.not_synced {
+        query = query.synced(false);
     }
 
     let jobs = query.iter().collect();
@@ -116,7 +122,7 @@ pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
+fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
     let mut builder = Builder::default();
     let mut headers = vec![
         "Name",
@@ -135,7 +141,7 @@ pub fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
     builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
-        let synced = if j.synced() { "Yes" } else { "Nop" };
+        let synced = if j.synced() { "Yes" } else { "No" };
         let id = j.id().to_string();
         let submit_time = j
             .submit_time()
