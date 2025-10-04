@@ -50,7 +50,7 @@ impl Remote {
         debug!("Running command: {:?}, {:?}", "qprep", args);
         args.push(input_file.to_string_lossy().into_owned());
         let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
-        debug!("qprep output: {:?}", qprep_output.stdout);
+        debug!("qprep output: {:?}", String::from_utf8(qprep_output.stdout));
         Ok(())
     }
 
