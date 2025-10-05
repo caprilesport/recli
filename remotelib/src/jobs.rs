@@ -53,6 +53,7 @@ impl Jobs {
     ///
     /// # Errors
     /// - If file deserialization fails will throw a serde_json::Error
+    ///
     /// The above is mainly due to a malformed JSON file, which may happen if the user manually edits the file for some reason.
     ///
     /// # Examples

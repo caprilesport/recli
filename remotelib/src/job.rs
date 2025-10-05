@@ -71,7 +71,7 @@ impl Job {
     ) -> Result<Self, Error> {
         let cwd = std::env::current_dir().unwrap();
         let project = Self::find_project(&cwd)?;
-        let name = Job::get_name(&project).unwrap();
+        let name = Job::get_name(&project, &basename).unwrap();
 
         Ok(Self {
             id,
@@ -157,17 +157,17 @@ impl Job {
     /// Errors:
     /// If the current directory doesn't have the correct permissions, this will raise a JobError::IO error.
     // TODO: this function could be better defined possibly?
-    fn get_name(project: &str) -> std::io::Result<String> {
+    fn get_name(project: &str, basename: &str) -> std::io::Result<String> {
         let cwd = std::env::current_dir()?;
 
-        let parts: Vec<String> = cwd
+        let mut parts: Vec<String> = cwd
             .iter()
             .skip_while(|part| *part != std::ffi::OsStr::new(&project))
             .skip(1)
             .filter_map(|s| s.to_str().map(String::from))
             .collect();
 
-        // parts.push(basename.to_owned());
+        parts.push(basename.to_owned());
         Ok(parts.join("-"))
     }
 
