@@ -11,10 +11,12 @@ pub enum Error {
     NotInAProject,
     #[error("Connection error:\n{0}")]
     Ssh(#[from] crate::connection::Error),
+    #[error("Failed writing file:\n{0}")]
+    AtomicWriteIO(#[from] atomicwrites::Error<std::io::Error>),
+    #[error("Failed writing file:\n{0}")]
+    JsonError(#[from] atomicwrites::Error<serde_json::Error>),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
-    #[error("Failed to serialize job database {0}")]
-    JsonError(#[from] serde_json::Error),
 }
 
 // Helper module for UUID serialization
@@ -263,7 +265,7 @@ mod tests {
     #[test]
     fn test_find_project_not_found() {
         let dir = tempdir().unwrap();
-        let result = Job::find_project(&dir.path());
+        let result = Job::find_project(dir.path());
         assert!(matches!(result, Err(Error::NotInAProject)));
     }
 

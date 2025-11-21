@@ -1,4 +1,5 @@
 use crate::job::{Error, Job, JobStatus};
+use atomicwrites::{AllowOverwrite, AtomicFile};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -42,8 +43,9 @@ impl Jobs {
     /// ```
     pub fn save_jobs(&self, json_file_path: &std::path::Path) -> Result<(), Error> {
         tracing::debug!("Saving jobs to {:?}", json_file_path);
-        let file = std::fs::File::create(json_file_path)?;
-        serde_json::to_writer_pretty(file, &self.jobs)?;
+
+        let atomic_file = AtomicFile::new(json_file_path, AllowOverwrite);
+        atomic_file.write(|temp_file| serde_json::to_writer_pretty(temp_file, &self.jobs))?;
         Ok(())
     }
 
