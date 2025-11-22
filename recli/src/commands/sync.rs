@@ -1,5 +1,7 @@
+use rayon::prelude::*;
 use remotelib::connection::SshConnection;
 use remotelib::jobs::Jobs;
+use std::sync::{Arc, Mutex};
 
 use tracing::{error, info};
 
@@ -18,53 +20,67 @@ pub struct Args {
 }
 
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
-    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let arcmtx = Arc::new(Mutex::new(jobs));
 
     match args.job_id {
         Some(id) => {
-            if let Some(job) = jobs.find_by_id(&id) {
+            if let Some(job) = arcmtx.lock().unwrap().find_by_id(&id) {
                 let remote = ctx.config.get_remote(job.remote())?;
                 let connection = SshConnection::new(remote)?;
-                let job = jobs
+                let job = arcmtx
+                    .lock()
+                    .unwrap()
                     .find_by_id(&id)
+                    .cloned()
                     .ok_or(remotelib::job::Error::JobNotFound(id))?;
-                Jobs::sync_job(job, remote, &connection, &ctx.config.ignore)?;
+                Jobs::sync_job(&job, remote, &connection, &ctx.config.ignore)?;
                 if args.update_status {
                     let current_time = chrono::Utc::now();
-                    jobs.update_synced_job(&id, current_time)?;
+                    arcmtx
+                        .lock()
+                        .unwrap()
+                        .update_synced_job(&id, current_time)?;
                 }
             } else {
                 return Err(anyhow::anyhow!(remotelib::job::Error::JobNotFound(id)));
             }
         }
         None => {
-            let syncable_jobs = jobs.syncable();
+            let syncable_jobs = arcmtx.lock().unwrap().syncable();
 
             if syncable_jobs.is_empty() {
                 info!("No jobs to sync")
             } else {
-                for (remote_name, ids) in syncable_jobs {
-                    let remote = ctx.config.get_remote(&remote_name)?;
-                    let connection = match SshConnection::new(remote) {
-                        Ok(sshconnection) => sshconnection,
+                syncable_jobs.par_iter().for_each(|(remote_name, ids)| {
+                    let remote = ctx.config.get_remote(remote_name).unwrap();
+                    match SshConnection::new(remote) {
+                        Ok(sshconnection) => {
+                            ids.par_iter().for_each(|id| {
+                                let job = arcmtx.lock().unwrap().find_by_id(id).cloned().unwrap();
+                                let sync_time = Jobs::sync_job(
+                                    &job,
+                                    remote,
+                                    &sshconnection,
+                                    &ctx.config.ignore,
+                                )
+                                .unwrap();
+                                arcmtx
+                                    .lock()
+                                    .unwrap()
+                                    .update_synced_job(id, sync_time)
+                                    .unwrap();
+                            });
+                        }
                         Err(err) => {
                             error!("Failed to connect to {}, caused by: {}", remote.name(), err);
-                            continue;
                         }
                     };
-                    for id in ids {
-                        let job = jobs
-                            .find_by_id(&id)
-                            .ok_or(remotelib::job::Error::JobNotFound(id))?;
-                        let sync_time =
-                            Jobs::sync_job(job, remote, &connection, &ctx.config.ignore)?;
-                        jobs.update_synced_job(&id, sync_time)?;
-                    }
-                }
+                });
             }
         }
     }
 
-    jobs.save_jobs(&ctx.json_file)?;
+    arcmtx.lock().unwrap().save_jobs(&ctx.json_file)?;
     Ok(())
 }
