@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use crate::Context;
@@ -29,37 +30,27 @@ pub fn execute(args: Args, ctx: Context) -> Result<()> {
             arcmtx.lock().unwrap().update(statuses, remote.name());
         }
         None => {
-            let mut handles = vec![];
-            for remote in ctx.config.remotes {
+            ctx.config.remotes.par_iter().for_each(|remote| {
                 let shared_jobs = arcmtx.clone();
-                let handle = std::thread::spawn(move || {
-                    match SshConnection::new(&remote) {
-                        Ok(sshconnection) => match remote.status(&sshconnection) {
-                            Ok(statuses) => {
-                                let mut jobs_guard = shared_jobs.lock().unwrap();
-                                jobs_guard.update(statuses, remote.name());
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to fetch statuses at {}, caused by {}",
-                                    remote.name(),
-                                    e
-                                );
-                            }
-                        },
-                        Err(err) => {
-                            error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+                match SshConnection::new(remote) {
+                    Ok(sshconnection) => match remote.status(&sshconnection) {
+                        Ok(statuses) => {
+                            let mut jobs_guard = shared_jobs.lock().unwrap();
+                            jobs_guard.update(statuses, remote.name());
                         }
-                    };
-                });
-                handles.push(handle);
-            }
-            for handle in handles {
-                if let Err(e) = handle.join() {
-                    error!("Thread errored: {:?}", e);
-                    // Continue with other threads? Return error?
-                }
-            }
+                        Err(e) => {
+                            error!(
+                                "Failed to fetch statuses at {}, caused by {}",
+                                remote.name(),
+                                e
+                            );
+                        }
+                    },
+                    Err(err) => {
+                        error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+                    }
+                };
+            });
         }
     }
 
