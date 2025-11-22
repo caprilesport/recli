@@ -25,13 +25,14 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
             if let Some(job) = jobs.find_by_id(&id) {
                 let remote = ctx.config.get_remote(job.remote())?;
                 let connection = SshConnection::new(remote)?;
-                jobs.sync_job(
-                    &id,
-                    remote,
-                    &connection,
-                    args.update_status,
-                    &ctx.config.ignore,
-                )?;
+                let job = jobs
+                    .find_by_id(&id)
+                    .ok_or(remotelib::job::Error::JobNotFound(id))?;
+                Jobs::sync_job(job, remote, &connection, &ctx.config.ignore)?;
+                if args.update_status {
+                    let current_time = chrono::Utc::now();
+                    jobs.update_synced_job(&id, current_time)?;
+                }
             } else {
                 return Err(anyhow::anyhow!(remotelib::job::Error::JobNotFound(id)));
             }
@@ -52,7 +53,12 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                         }
                     };
                     for id in ids {
-                        jobs.sync_job(&id, remote, &connection, true, &ctx.config.ignore)?;
+                        let job = jobs
+                            .find_by_id(&id)
+                            .ok_or(remotelib::job::Error::JobNotFound(id))?;
+                        let sync_time =
+                            Jobs::sync_job(job, remote, &connection, &ctx.config.ignore)?;
+                        jobs.update_synced_job(&id, sync_time)?;
                     }
                 }
             }

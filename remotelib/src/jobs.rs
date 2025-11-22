@@ -127,27 +127,33 @@ impl Jobs {
     /// directory and updates synchronization metadata. Optionally updates the
     /// job's synced status.
     pub fn sync_job(
-        &mut self,
-        id: &Uuid,
+        job: &Job,
         remote: &crate::remote::Remote,
         connection: &dyn crate::connection::RemoteConnection,
-        update_status: bool,
         ignore: &[glob::Pattern],
+    ) -> Result<chrono::DateTime<Utc>, Error> {
+        let remote_dir = remote.work_dir().join(job.id().to_string());
+
+        info!("Syncing job {} @ {}", job.name(), job.remote());
+
+        connection.download_files(&remote_dir, job.working_dir(), job.basename(), ignore)?;
+        let sync_time = chrono::Utc::now();
+
+        Ok(sync_time)
+    }
+
+    pub fn update_synced_job(
+        &mut self,
+        id: &Uuid,
+        sync_time: chrono::DateTime<Utc>,
     ) -> Result<(), Error> {
         let job = self
             .iter_mut()
             .find(|j| j.id() == id)
             .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
-        let remote_dir = remote.work_dir().join(id.to_string());
 
-        info!("Syncing job {} @ {}", job.name(), job.remote());
-
-        connection.download_files(&remote_dir, job.working_dir(), job.basename(), ignore)?;
-        job.set_sync_time(chrono::Utc::now());
-
-        if update_status {
-            job.set_synced_status(true);
-        }
+        job.set_synced_status(true);
+        job.set_sync_time(sync_time);
 
         Ok(())
     }
