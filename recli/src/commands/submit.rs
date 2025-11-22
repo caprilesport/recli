@@ -16,7 +16,7 @@ pub struct Args {
     remote: String,
 }
 
-pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let id = uuid::Uuid::new_v4();
     let remote = ctx.config.get_remote(&args.remote)?;
     let file_stem = args.inpfile.file_stem().unwrap().to_str().unwrap();

@@ -17,7 +17,7 @@ pub struct Args {
     update_status: bool,
 }
 
-pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     match args.job_id {

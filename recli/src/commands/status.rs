@@ -59,7 +59,7 @@ pub struct Args {
     pub not_synced: bool,
 }
 
-pub fn execute(args: Args, ctx: &crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     if !args.all {

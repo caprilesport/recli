@@ -72,10 +72,10 @@ fn main() -> anyhow::Result<()> {
     let ctx = Context::new(&cli)?;
 
     match cli.mode {
-        Mode::Fetch(args) => commands::fetch::execute(args, &ctx)?,
-        Mode::Submit(args) => commands::submit::execute(args, &ctx)?,
-        Mode::Status(args) => commands::status::execute(args, &ctx)?,
-        Mode::Sync(args) => commands::sync::execute(args, &ctx)?,
+        Mode::Fetch(args) => commands::fetch::execute(args, ctx)?,
+        Mode::Submit(args) => commands::submit::execute(args, ctx)?,
+        Mode::Status(args) => commands::status::execute(args, ctx)?,
+        Mode::Sync(args) => commands::sync::execute(args, ctx)?,
     };
 
     Ok(())
