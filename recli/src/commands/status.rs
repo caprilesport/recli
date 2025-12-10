@@ -106,39 +106,43 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     }
 
     let jobs = query.iter().collect();
-    let mut table = create_status_table(jobs, args.show_id);
     let mut stdout = std::io::stdout().lock();
 
     if stdout.is_terminal() {
+        let mut table = create_status_table(jobs, args.show_id, true);
         table
             .with(tabled::settings::Style::rounded())
             .with(tabled::settings::Alignment::center());
+        writeln!(stdout, "{}", table)?;
     } else {
+        let mut table = create_status_table(jobs, args.show_id, false);
         table.with(tabled::settings::Style::empty());
+        writeln!(stdout, "{}", table)?;
     }
-
-    writeln!(stdout, "{}", table)?;
 
     Ok(())
 }
 
-fn create_status_table(jobs: Vec<&Job>, with_id: bool) -> tabled::Table {
+fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tabled::Table {
     let mut builder = Builder::default();
-    let mut headers = vec![
-        "Name",
-        "File",
-        "Project",
-        "St",
-        "Sync",
-        "Remote",
-        "Submit time",
-        "Sync time",
-    ];
-    if with_id {
-        headers.push("Remote ID");
-        headers.push("ID");
+
+    if with_header {
+        let mut headers = vec![
+            "Name",
+            "File",
+            "Project",
+            "St",
+            "Sync",
+            "Remote",
+            "Submit time",
+            "Sync time",
+        ];
+        if with_id {
+            headers.push("Remote ID");
+            headers.push("ID");
+        }
+        builder.push_record(headers);
     }
-    builder.push_record(headers);
 
     jobs.iter().for_each(|j| {
         let synced = if j.synced() { "Yes" } else { "No" };
