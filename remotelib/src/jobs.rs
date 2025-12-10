@@ -200,6 +200,17 @@ impl Jobs {
                     .push(*job.id())
             });
 
+        self.query()
+            .with_status(&JobStatus::Undefined)
+            .synced(false)
+            .iter()
+            .for_each(|job| {
+                jobs_by_remote
+                    .entry(job.remote().to_string())
+                    .or_default()
+                    .push(*job.id())
+            });
+
         jobs_by_remote
     }
 
