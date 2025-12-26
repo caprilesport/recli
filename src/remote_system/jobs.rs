@@ -260,6 +260,7 @@ pub struct JobQuery<'a> {
     remote_id: Option<&'a str>,
     remote: Option<Match<'a>>,
     filename: Option<Match<'a>>,
+    directory: Option<Match<'a>>,
     submit_time_after: Option<DateTime<Utc>>,
     sync_time_after: Option<DateTime<Utc>>,
 }
@@ -276,6 +277,7 @@ impl<'a> JobQuery<'a> {
             remote: None,
             remote_id: None,
             filename: None,
+            directory: None,
             submit_time_after: None,
             sync_time_after: None,
         }
@@ -316,8 +318,8 @@ impl<'a> JobQuery<'a> {
         self
     }
 
-    pub fn with_submit_time_after(mut self, time: DateTime<Utc>) -> Self {
-        self.submit_time_after = Some(time);
+    pub fn with_dir(mut self, dir_matcher: Match<'a>) -> Self {
+        self.directory = Some(dir_matcher);
         self
     }
 
@@ -347,6 +349,7 @@ impl<'a> JobQuery<'a> {
             remote_id,
             remote,
             filename,
+            directory,
             submit_time_after,
             sync_time_after,
         } = self;
@@ -366,6 +369,7 @@ impl<'a> JobQuery<'a> {
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
             let remote_match = check(job.remote(), &remote);
             let name_match = check(job.filename(), &filename);
+            let dir_match = check(job.work_dir().to_str().unwrap(), &directory);
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
@@ -377,6 +381,7 @@ impl<'a> JobQuery<'a> {
                 && remote_id_match
                 && remote_match
                 && name_match
+                && dir_match
                 && submit_time_match
                 && sync_time_match
         })

@@ -34,6 +34,10 @@ pub struct Args {
     #[arg(long, short)]
     pub name: Option<String>,
 
+    /// Filter by directory
+    #[arg(long, short)]
+    pub directory: Option<String>,
+
     /// Filter by remote
     #[arg(long, short)]
     pub remote: Option<String>,
@@ -85,6 +89,10 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
 
     if let Some(remote_id) = &args.remote_id {
         query = query.with_remote_id(remote_id);
+    }
+
+    if let Some(directory) = &args.directory {
+        query = query.with_dir(Match::Contains(directory));
     }
 
     if let Some(status) = &args.status {
