@@ -7,7 +7,7 @@ use std::path::Path;
 /// Supported queue managers
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum QueueManager {
-    PBS,
+    Pbs,
     Slurm,
     Pueue,
 }
@@ -28,7 +28,7 @@ impl QueueManager {
     /// ```
     pub fn get_id(&self, output: String) -> String {
         match self {
-            Self::PBS => output.trim().to_string(),
+            Self::Pbs => output.trim().to_string(),
             Self::Pueue => {
                 let re = Regex::new(r"id (\d+)").unwrap();
                 re.captures(&output)
@@ -53,7 +53,7 @@ impl QueueManager {
     /// # Examples
     ///
     /// ```
-    /// let manager = QueueManager::PBS;
+    /// let manager = QueueManager::Pbs;
     /// let output = "12345.username queue jobname user time status".to_string();
     /// let statuses = manager.status(output);
     /// ```
@@ -61,7 +61,7 @@ impl QueueManager {
         let mut statuses = HashMap::new();
 
         match self {
-            Self::PBS => {
+            Self::Pbs => {
                 for line in output.lines().skip(5) {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 10 {
@@ -129,7 +129,7 @@ impl QueueManager {
     /// * `user` - The username to filter jobs by (not all queue managers support this)
     pub fn status_command(&self, user: &str) -> String {
         match self {
-            Self::PBS => format!("qstat -u {} -x", user),
+            Self::Pbs => format!("qstat -u {} -x", user),
             Self::Pueue => "pueue status".to_string(),
             //TODO: check this starttime
             Self::Slurm => "sacct -X --starttime 1970-01-01".to_string(),
@@ -146,7 +146,7 @@ impl QueueManager {
     /// * `job_name` - The name of the job script file to submit
     pub fn submit_command(&self, remote_dir: &Path, job_name: &str) -> String {
         match self {
-            Self::PBS => format!("cd {} && qsub {} ", remote_dir.to_str().unwrap(), job_name),
+            Self::Pbs => format!("cd {} && qsub {} ", remote_dir.to_str().unwrap(), job_name),
             Self::Pueue => format!("cd {} && . ./{} ", remote_dir.to_str().unwrap(), job_name),
             Self::Slurm => format!(
                 "cd {} && sbatch {} ",
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn test_get_id() {
         let pbs_output = "12345.server".to_string();
-        assert_eq!(QueueManager::PBS.get_id(pbs_output), "12345.server");
+        assert_eq!(QueueManager::Pbs.get_id(pbs_output), "12345.server");
 
         let pueue_output = "New task added (id 2).".to_string();
         assert_eq!(QueueManager::Pueue.get_id(pueue_output), "2");
@@ -188,7 +188,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12346.server    testuser  big     solvation* 33526*   1  16   28gb 10000 R 104:4
 12347.server    testuser  big     init.job   24242*   1  16   30gb 10000 F 497:3
 "#;
-        let statuses = QueueManager::PBS.status(pbs_output.to_string());
+        let statuses = QueueManager::Pbs.status(pbs_output.to_string());
         let mut expected = HashMap::new();
         expected.insert("12345.server".to_string(), JobStatus::Queued);
         expected.insert("12346.server".to_string(), JobStatus::Running);
@@ -217,7 +217,7 @@ Group "default" (1 parallel): running
     #[test]
     fn test_status_command() {
         assert_eq!(
-            QueueManager::PBS.status_command("testuser"),
+            QueueManager::Pbs.status_command("testuser"),
             "qstat -u testuser -x"
         );
         assert_eq!(
@@ -232,7 +232,7 @@ Group "default" (1 parallel): running
         let remote_dir = Path::new("/remote/work/job1");
         let job_name = "script.job";
         assert_eq!(
-            QueueManager::PBS.submit_command(remote_dir, job_name),
+            QueueManager::Pbs.submit_command(remote_dir, job_name),
             "cd /remote/work/job1 && qsub script.job "
         );
         assert_eq!(

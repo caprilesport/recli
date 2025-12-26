@@ -12,7 +12,7 @@ pub enum Error {
     #[error("Failed writing file:\n{0}")]
     AtomicWriteIO(#[from] atomicwrites::Error<std::io::Error>),
     #[error("Failed writing file:\n{0}")]
-    JsonError(#[from] atomicwrites::Error<serde_json::Error>),
+    Json(#[from] atomicwrites::Error<serde_json::Error>),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
 }

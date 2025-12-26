@@ -323,10 +323,15 @@ impl<'a> JobQuery<'a> {
         self
     }
 
-    pub fn with_sync_time_after(mut self, time: DateTime<Utc>) -> Self {
-        self.sync_time_after = Some(time);
-        self
-    }
+    // pub fn with_submit_time_after(mut self, time: DateTime<Utc>) -> Self {
+    //     self.submit_time_after = Some(time);
+    //     self
+    // }
+
+    // pub fn with_sync_time_after(mut self, time: DateTime<Utc>) -> Self {
+    //     self.sync_time_after = Some(time);
+    //     self
+    // }
 
     /// Executes the query and returns an iterator over matching jobs.
     ///

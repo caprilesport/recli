@@ -13,7 +13,7 @@ pub enum Error {
     #[error("Connection to remote {0} timed out.")]
     TimeoutToRemote(String),
     #[error("Ssh2 failed, cause by: {0}")]
-    Ssh2Error(#[from] ssh2::Error),
+    Ssh2(#[from] ssh2::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error),
     #[error(

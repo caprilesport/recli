@@ -176,7 +176,10 @@ mod tests {
     }
 
     impl RemoteConnection for MockConnection {
-        fn execute(&self, command: &str) -> Result<String, crate::remote_system::connection::Error> {
+        fn execute(
+            &self,
+            command: &str,
+        ) -> Result<String, crate::remote_system::connection::Error> {
             self.commands.borrow_mut().push(command.to_string());
             if let Some(output) = self.mock_output.borrow().get(command) {
                 Ok(output.clone())
@@ -225,7 +228,7 @@ mod tests {
             user: "testuser".to_string(),
             work_directory: PathBuf::from("/remote/work"),
             prepare_args: vec!["arg1".to_string()],
-            queue_manager: QueueManager::PBS,
+            queue_manager: QueueManager::Pbs,
         }
     }
 
