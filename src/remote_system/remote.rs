@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::connection::RemoteConnection;
-use crate::job::JobStatus;
-use crate::queuemanager::QueueManager;
+use crate::remote_system::connection::RemoteConnection;
+use crate::remote_system::job::JobStatus;
+use crate::remote_system::queuemanager::QueueManager;
 
 use std::collections::HashMap;
 
@@ -12,7 +12,7 @@ use tracing::debug;
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
     #[error("Connection error:\n{0}")]
-    ConnectionError(#[from] crate::connection::Error),
+    ConnectionError(#[from] crate::remote_system::connection::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error), // #[error()]
 }
@@ -92,15 +92,14 @@ impl Remote {
     /// Returns an error if file preparation, upload, or submission fails.
     pub fn submit(
         &self,
-        job_id: uuid::Uuid,
         inp_file: &Path,
         connection: &dyn RemoteConnection,
+        remote_dir: &Path,
         ignore: &[glob::Pattern],
     ) -> Result<String, Error> {
         self.prepare(inp_file)?;
 
-        let remote_dir = self.work_dir().join(job_id.to_string());
-        connection.mkdir(&remote_dir)?;
+        connection.mkdir(remote_dir)?;
         let file_stem = inp_file.file_stem().unwrap().to_str().unwrap();
 
         let files_to_send: Vec<PathBuf> = std::fs::read_dir(".")?
@@ -117,12 +116,12 @@ impl Remote {
             })
             .collect();
 
-        connection.upload_files(&files_to_send, &remote_dir, ignore)?;
+        connection.upload_files(&files_to_send, remote_dir, ignore)?;
 
         let job_script_name = format!("{}.job", file_stem);
         let command = self
             .queue_manager
-            .submit_command(&remote_dir, &job_script_name);
+            .submit_command(remote_dir, &job_script_name);
 
         let output = connection.execute(&command)?;
         let remote_id = self.queue_manager.get_id(output);
@@ -151,9 +150,9 @@ impl Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connection::RemoteConnection;
-    use crate::job::JobStatus;
-    use crate::queuemanager::QueueManager;
+    use crate::remote_system::connection::RemoteConnection;
+    use crate::remote_system::job::JobStatus;
+    use crate::remote_system::queuemanager::QueueManager;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -177,7 +176,7 @@ mod tests {
     }
 
     impl RemoteConnection for MockConnection {
-        fn execute(&self, command: &str) -> Result<String, crate::connection::Error> {
+        fn execute(&self, command: &str) -> Result<String, crate::remote_system::connection::Error> {
             self.commands.borrow_mut().push(command.to_string());
             if let Some(output) = self.mock_output.borrow().get(command) {
                 Ok(output.clone())
@@ -186,7 +185,7 @@ mod tests {
             }
         }
 
-        fn mkdir(&self, _path: &Path) -> Result<(), crate::connection::Error> {
+        fn mkdir(&self, _path: &Path) -> Result<(), crate::remote_system::connection::Error> {
             Ok(())
         }
 
@@ -195,7 +194,7 @@ mod tests {
             local_paths: &[PathBuf],
             remote_dir: &Path,
             _ignore: &[glob::Pattern],
-        ) -> Result<(), crate::connection::Error> {
+        ) -> Result<(), crate::remote_system::connection::Error> {
             self.uploads
                 .borrow_mut()
                 .push((local_paths.to_vec(), remote_dir.to_path_buf()));
@@ -208,7 +207,7 @@ mod tests {
             local_dir: &Path,
             basename: &str,
             _ignore: &[glob::Pattern],
-        ) -> Result<(), crate::connection::Error> {
+        ) -> Result<(), crate::remote_system::connection::Error> {
             self.downloads.borrow_mut().push((
                 remote_dir.to_path_buf(),
                 local_dir.to_path_buf(),

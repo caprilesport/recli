@@ -3,8 +3,8 @@ use std::io::{IsTerminal, Write};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
-use remotelib::job::{Job, JobStatus};
-use remotelib::jobs::{Jobs, Match};
+use crate::remote_system::job::{Job, JobStatus};
+use crate::remote_system::jobs::{Jobs, Match};
 
 /// Displays the status of jobs, with optional filters.
 /// By default it doesn't show jobs that are synced
@@ -24,7 +24,11 @@ pub struct Args {
 
     /// Filter by id
     #[arg(long, short)]
-    pub id: Option<Uuid>,
+    pub id: Option<u16>,
+
+    /// Filter by uuid
+    #[arg(long, short)]
+    pub uuid: Option<Uuid>,
 
     /// Filter by name
     #[arg(long, short)]
@@ -37,14 +41,6 @@ pub struct Args {
     /// Filter by remote_id
     #[arg(long)]
     pub remote_id: Option<String>,
-
-    /// Filter by basename
-    #[arg(long, short)]
-    pub basename: Option<String>,
-
-    /// Filter by project
-    #[arg(long, short)]
-    pub project: Option<String>,
 
     /// Filter by status
     #[arg(long, short, value_enum)]
@@ -75,6 +71,10 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         query.with_id(&id);
     }
 
+    if let Some(uuid) = args.uuid {
+        query.with_uuid(&uuid);
+    }
+
     if let Some(name) = &args.name {
         query = query.with_name(Match::Contains(name));
     }
@@ -85,14 +85,6 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
 
     if let Some(remote_id) = &args.remote_id {
         query = query.with_remote_id(remote_id);
-    }
-
-    if let Some(basename) = &args.basename {
-        query = query.with_basename(Match::Contains(basename));
-    }
-
-    if let Some(project) = &args.project {
-        query = query.with_project(Match::Contains(project));
     }
 
     if let Some(status) = &args.status {
@@ -128,11 +120,10 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
 
     if with_header {
         let mut headers = vec![
+            "ID",
+            "Work dir",
             "Name",
-            "File",
-            "Project",
-            "St",
-            "Sync",
+            "Status",
             "Remote",
             "Submit time",
             "Sync time",
@@ -145,8 +136,9 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
     }
 
     jobs.iter().for_each(|j| {
-        let synced = if j.synced() { "Yes" } else { "No" };
+        let j_uuid = j.uuid().to_string();
         let id = j.id().to_string();
+        let work_dir = j.work_dir().to_str().unwrap();
         let submit_time = j
             .submit_time()
             .with_timezone(&chrono::Local)
@@ -160,18 +152,17 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
             None => "None".to_string(),
         };
         let mut row = vec![
-            j.name(),
-            j.basename(),
-            j.project(),
+            &id,
+            work_dir,
+            j.filename(),
             j.status().as_str(),
-            synced,
             j.remote(),
             &submit_time,
             &sync_time,
         ];
         if with_id {
             row.push(j.remote_id());
-            row.push(&id);
+            row.push(&j_uuid);
         }
         builder.push_record(row);
     });

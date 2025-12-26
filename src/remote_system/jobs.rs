@@ -1,4 +1,4 @@
-use crate::job::{Error, Job, JobStatus};
+use crate::remote_system::job::{Error, Job, JobStatus};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -112,8 +112,9 @@ impl Jobs {
             info!("Jobs with status changes @ {}:", &remotename);
             for job in changed_jobs {
                 info!(
-                    "  - Job {} @ {}: changed to {:?}",
-                    job.name(),
+                    "  - Job {} with ID {} @ {}: changed to {:?}",
+                    job.filename(),
+                    job.id(),
                     job.remote(),
                     job.status()
                 );
@@ -128,15 +129,17 @@ impl Jobs {
     /// job's synced status.
     pub fn sync_job(
         job: &Job,
-        remote: &crate::remote::Remote,
-        connection: &dyn crate::connection::RemoteConnection,
+        connection: &dyn crate::remote_system::connection::RemoteConnection,
         ignore: &[glob::Pattern],
     ) -> Result<chrono::DateTime<Utc>, Error> {
-        let remote_dir = remote.work_dir().join(job.id().to_string());
+        info!(
+            "Syncing job {} id {} @ {}",
+            job.filename(),
+            job.id(),
+            job.remote()
+        );
 
-        info!("Syncing job {} @ {}", job.name(), job.remote());
-
-        connection.download_files(&remote_dir, job.working_dir(), job.basename(), ignore)?;
+        connection.download_files(job.remote_dir(), job.work_dir(), job.filename(), ignore)?;
         let sync_time = chrono::Utc::now();
 
         Ok(sync_time)
@@ -149,17 +152,16 @@ impl Jobs {
     ) -> Result<(), Error> {
         let job = self
             .iter_mut()
-            .find(|j| j.id() == id)
+            .find(|j| j.uuid() == id)
             .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
 
-        job.set_synced_status(true);
         job.set_sync_time(sync_time);
 
         Ok(())
     }
 
     pub fn find_by_id(&self, id: &Uuid) -> Option<&Job> {
-        self.jobs.iter().find(|j| j.id() == id)
+        self.jobs.iter().find(|j| j.uuid() == id)
     }
 
     /// Returns a map of syncable jobs grouped by remote system.
@@ -186,7 +188,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.id())
+                    .push(*job.uuid())
             });
 
         self.query()
@@ -197,7 +199,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.id())
+                    .push(*job.uuid())
             });
 
         self.query()
@@ -208,7 +210,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.id())
+                    .push(*job.uuid())
             });
 
         jobs_by_remote
@@ -217,7 +219,7 @@ impl Jobs {
     /// Creates a new query builder for filtering and searching jobs.
     ///
     /// Returns a `JobQuery` instance
-    pub fn query(&self) -> JobQuery {
+    pub fn query(&self) -> JobQuery<'_> {
         JobQuery::new(&self.jobs)
     }
 
@@ -251,14 +253,13 @@ pub enum Match<'a> {
 #[derive(Copy, Clone)]
 pub struct JobQuery<'a> {
     jobs: &'a [Job],
-    id: Option<&'a Uuid>,
+    id: Option<&'a u16>,
+    uuid: Option<&'a Uuid>,
     synced: Option<bool>,
     status: Option<&'a JobStatus>,
     remote_id: Option<&'a str>,
     remote: Option<Match<'a>>,
-    name: Option<Match<'a>>,
-    basename: Option<Match<'a>>,
-    project: Option<Match<'a>>,
+    filename: Option<Match<'a>>,
     submit_time_after: Option<DateTime<Utc>>,
     sync_time_after: Option<DateTime<Utc>>,
 }
@@ -269,20 +270,24 @@ impl<'a> JobQuery<'a> {
         Self {
             jobs,
             id: None,
+            uuid: None,
             synced: None,
             status: None,
             remote: None,
             remote_id: None,
-            name: None,
-            basename: None,
-            project: None,
+            filename: None,
             submit_time_after: None,
             sync_time_after: None,
         }
     }
 
-    pub fn with_id(mut self, id: &'a Uuid) -> Self {
+    pub fn with_id(mut self, id: &'a u16) -> Self {
         self.id = Some(id);
+        self
+    }
+
+    pub fn with_uuid(mut self, id: &'a Uuid) -> Self {
+        self.uuid = Some(id);
         self
     }
 
@@ -307,17 +312,7 @@ impl<'a> JobQuery<'a> {
     }
 
     pub fn with_name(mut self, name_matcher: Match<'a>) -> Self {
-        self.name = Some(name_matcher);
-        self
-    }
-
-    pub fn with_basename(mut self, basename_matcher: Match<'a>) -> Self {
-        self.basename = Some(basename_matcher);
-        self
-    }
-
-    pub fn with_project(mut self, project_matcher: Match<'a>) -> Self {
-        self.project = Some(project_matcher);
+        self.filename = Some(name_matcher);
         self
     }
 
@@ -346,13 +341,12 @@ impl<'a> JobQuery<'a> {
         let Self {
             jobs,
             id,
+            uuid,
             synced,
             status,
             remote_id,
             remote,
-            name,
-            basename,
-            project,
+            filename,
             submit_time_after,
             sync_time_after,
         } = self;
@@ -366,25 +360,23 @@ impl<'a> JobQuery<'a> {
 
         jobs.iter().filter(move |job| {
             let id_match = id.is_none_or(|id| id == job.id());
+            let uuid_match = uuid.is_none_or(|id| id == job.uuid());
             let synced_match = synced.is_none_or(|synced| synced == job.synced());
             let status_match = status.is_none_or(|st| st == job.status());
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
             let remote_match = check(job.remote(), &remote);
-            let name_match = check(job.name(), &name);
-            let basename_match = check(job.basename(), &basename);
-            let project_match = check(job.project(), &project);
+            let name_match = check(job.filename(), &filename);
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
 
             id_match
+                && uuid_match
                 && synced_match
                 && status_match
                 && remote_id_match
                 && remote_match
                 && name_match
-                && basename_match
-                && project_match
                 && submit_time_match
                 && sync_time_match
         })

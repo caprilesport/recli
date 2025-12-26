@@ -1,6 +1,6 @@
-use remotelib::connection::SshConnection;
-use remotelib::job::Job;
-use remotelib::jobs::Jobs;
+use crate::remote_system::connection::SshConnection;
+use crate::remote_system::job::Job;
+use crate::remote_system::jobs::Jobs;
 use std::path::PathBuf;
 
 use tracing::{error, info};
@@ -9,7 +9,7 @@ use tracing::{error, info};
 /// Submits a job to a specified remote machine.
 ///
 /// This command prepares the necessary job files, uploads them to the remote's
-/// working directory, and submits the job to the queue manager.
+/// working directory, and submis the job to the queue manager.
 pub struct Args {
     inpfile: PathBuf,
     #[arg(short, long)]
@@ -20,6 +20,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let id = uuid::Uuid::new_v4();
     let remote = ctx.config.get_remote(&args.remote)?;
     let file_stem = args.inpfile.file_stem().unwrap().to_str().unwrap();
+    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let internal_id = (jobs.iter().count() + 1) as u16;
 
     let connection = match SshConnection::new(remote) {
         Ok(sshconnection) => sshconnection,
@@ -28,15 +30,19 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
             return Err(err)?;
         }
     };
-    let remote_id = remote.submit(id, &args.inpfile, &connection, &ctx.config.ignore)?;
+    let remote_dir = remote.work_dir().join(id.to_string());
+    let remote_id = remote.submit(&args.inpfile, &connection, &remote_dir, &ctx.config.ignore)?;
+    let work_dir = std::env::current_dir()?;
 
     let job = Job::new(
+        internal_id,
         id,
         remote.name().to_owned(),
         remote_id,
         file_stem.to_owned(),
+        remote_dir,
+        work_dir,
     )?;
-    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     info!(
         "Job submitted successfully with id: {}. Remote id: {}",

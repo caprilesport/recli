@@ -2,9 +2,8 @@ use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use crate::Context;
-use anyhow::Result;
-use remotelib::connection::SshConnection;
-use remotelib::jobs::Jobs;
+use crate::remote_system::connection::SshConnection;
+use crate::remote_system::jobs::Jobs;
 
 use tracing::error;
 
@@ -18,7 +17,7 @@ pub struct Args {
     remote: Option<String>,
 }
 
-pub fn execute(args: Args, ctx: Context) -> Result<()> {
+pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
     let jobs = Jobs::load_jobs(&ctx.json_file)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
 

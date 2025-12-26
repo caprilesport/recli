@@ -5,6 +5,7 @@ use crate::config::Config;
 
 mod commands;
 mod config;
+mod remote_system;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A remote job submission and management CLI.")]
@@ -32,6 +33,7 @@ enum Mode {
     Submit(commands::submit::Args),
     Sync(commands::sync::Args),
     Status(commands::status::Args),
+    Info(commands::info::Args),
 }
 
 /// Running context of the application
@@ -76,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         Mode::Submit(args) => commands::submit::execute(args, ctx)?,
         Mode::Status(args) => commands::status::execute(args, ctx)?,
         Mode::Sync(args) => commands::sync::execute(args, ctx)?,
+        Mode::Info(args) => commands::info::execute(args, ctx)?,
     };
 
     Ok(())

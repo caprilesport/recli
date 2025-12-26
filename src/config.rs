@@ -1,4 +1,4 @@
-use remotelib::remote::Remote;
+use crate::remote_system::remote::Remote;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
@@ -52,11 +52,13 @@ impl Config {
     }
 
     pub fn get_dir() -> std::io::Result<std::path::PathBuf> {
-        let mut config_dir = dirs::config_dir().ok_or(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "OS Config directory not found",
-        ))?;
-        config_dir.push("recli");
+        // let mut config_dir = dirs::config_dir().ok_or(std::io::Error::new(
+        //     std::io::ErrorKind::NotFound,
+        //     "OS Config directory not found",
+        // ))?;
+        // config_dir.push("recli");
+        let mut config_dir = std::env::current_dir()?;
+        config_dir.push("tmp");
         std::fs::create_dir_all(&config_dir)?;
         Ok(config_dir)
     }

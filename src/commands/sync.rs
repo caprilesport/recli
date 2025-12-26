@@ -1,6 +1,6 @@
 use rayon::prelude::*;
-use remotelib::connection::SshConnection;
-use remotelib::jobs::Jobs;
+use crate::remote_system::connection::SshConnection;
+use crate::remote_system::jobs::Jobs;
 use std::sync::{Arc, Mutex};
 
 use tracing::{error, info};
@@ -29,14 +29,14 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                 let guard = arcmtx.lock().unwrap();
                 let job = guard
                     .find_by_id(&id)
-                    .ok_or(remotelib::job::Error::JobNotFound(id))?;
+                    .ok_or(crate::remote_system::job::Error::JobNotFound(id))?;
                 (job.clone(), job.remote().to_string())
             };
 
             let remote = ctx.config.get_remote(&remote_name)?;
             let connection = SshConnection::new(remote)?;
 
-            match Jobs::sync_job(&job, remote, &connection, &ctx.config.ignore) {
+            match Jobs::sync_job(&job, &connection, &ctx.config.ignore) {
                 Ok(sync_time) => {
                     if args.update_status {
                         let mut guard = arcmtx.lock().unwrap();
@@ -83,7 +83,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                             }
                         };
 
-                        match Jobs::sync_job(&job, remote, &connection, &ctx.config.ignore) {
+                        match Jobs::sync_job(&job, &connection, &ctx.config.ignore) {
                             Ok(sync_time) => {
                                 if let Err(e) =
                                     arcmtx.lock().unwrap().update_synced_job(id, sync_time)

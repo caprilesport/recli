@@ -1,4 +1,4 @@
-use crate::job::JobStatus;
+use crate::remote_system::job::JobStatus;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

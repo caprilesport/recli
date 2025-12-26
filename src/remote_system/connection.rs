@@ -1,4 +1,4 @@
-use crate::remote::Remote;
+use crate::remote_system::remote::Remote;
 use ssh2::Session;
 use std::io::prelude::*;
 use std::net::{TcpStream, ToSocketAddrs};
