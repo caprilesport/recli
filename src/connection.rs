@@ -10,9 +10,13 @@ const CONNECTION_TIMEOUT: u32 = 9000;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
+    #[error("No public key found")]
+    NoPublicKeyAccepted,
+    #[error("Incorrect password, try again")]
+    IncorrectPassword,
     #[error("Connection to remote {0} timed out.")]
     TimeoutToRemote(String),
-    #[error("Ssh2 failed, cause by: {0}")]
+    #[error("Ssh2 failed, caused by: {0}")]
     Ssh2(#[from] ssh2::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error),
@@ -114,7 +118,7 @@ impl SshConnection {
         session.set_timeout(CONNECTION_TIMEOUT);
         session.set_tcp_stream(tcp);
         session.handshake()?;
-        session.userauth_agent(remote.user())?;
+        aunthenticate(&mut session, remote.user())?;
         Ok(SshConnection { session })
     }
 
@@ -274,4 +278,64 @@ impl RemoteConnection for SshConnection {
         }
         Ok(())
     }
+}
+
+fn aunthenticate(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
+    if try_agent_auth(sess, username).is_err() {
+        debug!("Agent authentication failed or agent not running.");
+        if try_default_pubkey_auth(sess, username).is_err() {
+            debug!("Default public key authentication failed.");
+            if try_password_auth(sess, username).is_err() {
+                debug!("Password authentication also failed.");
+                return Err(Error::IncorrectPassword);
+            }
+        }
+    }
+
+    if sess.authenticated() {
+        debug!("Authentication successful.");
+    } else {
+        debug!("Authentication failed.");
+    }
+
+    Ok(())
+}
+
+fn try_agent_auth(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
+    debug!("Attempting agent authentication...");
+    sess.userauth_agent(username)?;
+    Ok(())
+}
+
+fn try_default_pubkey_auth(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
+    debug!("Attempting default public key authentication...");
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+
+    let key_files = ["id_ed25519", "id_rsa"];
+
+    for key_file in &key_files {
+        let key_path = Path::new(&home).join(".ssh").join(key_file);
+        if key_path.exists() {
+            debug!("Trying default key: {:?}", key_path);
+            if sess
+                .userauth_pubkey_file(username, None, &key_path, None)
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(Error::NoPublicKeyAccepted)
+}
+
+fn try_password_auth(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
+    debug!("Falling back to password authentication.");
+    print!("Password for {}: ", username);
+    std::io::stdout().flush().unwrap();
+
+    let password = rpassword::read_password().unwrap();
+
+    sess.userauth_password(username, &password)?;
+
+    Ok(())
 }
