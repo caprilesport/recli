@@ -73,7 +73,7 @@ pub trait RemoteConnection {
 
     /// Downloads files from a remote directory to a local one.
     ///
-    /// Only downloads files that start with the given basename and are newer than
+    /// Only downloads files that are newer than
     /// their local counterparts. Files matching ignore patterns are skipped.
     ///
     /// # Errors
@@ -83,7 +83,6 @@ pub trait RemoteConnection {
         &self,
         remote_dir: &Path,
         local_dir: &Path,
-        basename: &str,
         ignore: &[glob::Pattern],
     ) -> Result<(), Error>;
 }
@@ -251,7 +250,6 @@ impl RemoteConnection for SshConnection {
         &self,
         remote_dir: &Path,
         local_dir: &Path,
-        basename: &str,
         ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
@@ -261,13 +259,7 @@ impl RemoteConnection for SshConnection {
                 debug!("Ignoring {:?} due to ignore pattern", &remote_path);
                 continue;
             }
-            if stat.is_file()
-                && remote_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .starts_with(basename)
-            {
+            if stat.is_file() {
                 let file_name = remote_path
                     .file_name()
                     .ok_or_else(|| Error::InvalidPath(remote_path.clone()))?;
