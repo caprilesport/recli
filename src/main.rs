@@ -5,7 +5,11 @@ use crate::config::Config;
 
 mod commands;
 mod config;
-mod remote_system;
+mod connection;
+mod job;
+mod jobs;
+mod queuemanager;
+mod remote;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "A remote job submission and management CLI.")]

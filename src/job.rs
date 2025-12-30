@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
-use thiserror;
 use uuid::Uuid;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
@@ -8,7 +7,7 @@ pub enum Error {
     #[error("Job with id {0} not found")]
     JobNotFound(Uuid),
     #[error("Connection error:\n{0}")]
-    Ssh(#[from] crate::remote_system::connection::Error),
+    Ssh(#[from] crate::connection::Error),
     #[error("Failed writing file:\n{0}")]
     AtomicWriteIO(#[from] atomicwrites::Error<std::io::Error>),
     #[error("Failed writing file:\n{0}")]

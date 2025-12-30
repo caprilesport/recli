@@ -1,4 +1,4 @@
-use crate::remote_system::job::{Error, Job, JobStatus};
+use crate::job::{Error, Job, JobStatus};
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -129,7 +129,7 @@ impl Jobs {
     /// job's synced status.
     pub fn sync_job(
         job: &Job,
-        connection: &dyn crate::remote_system::connection::RemoteConnection,
+        connection: &dyn crate::connection::RemoteConnection,
         ignore: &[glob::Pattern],
     ) -> Result<chrono::DateTime<Utc>, Error> {
         info!(
@@ -139,7 +139,7 @@ impl Jobs {
             job.remote()
         );
 
-        connection.download_files(job.remote_dir(), job.work_dir(), job.filename(), ignore)?;
+        connection.download_files(job.remote_dir(), job.work_dir(), ignore)?;
         let sync_time = chrono::Utc::now();
 
         Ok(sync_time)

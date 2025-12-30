@@ -1,4 +1,4 @@
-use crate::remote_system::remote::Remote;
+use crate::remote::Remote;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 

@@ -3,8 +3,8 @@ use std::io::{IsTerminal, Write};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
-use crate::remote_system::job::{Job, JobStatus};
-use crate::remote_system::jobs::{Jobs, Match};
+use crate::job::{Job, JobStatus};
+use crate::jobs::{Jobs, Match};
 
 /// Displays the status of jobs, with optional filters.
 /// By default it doesn't show jobs that are synced

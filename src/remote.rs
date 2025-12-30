@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::remote_system::connection::RemoteConnection;
-use crate::remote_system::job::JobStatus;
-use crate::remote_system::queuemanager::QueueManager;
+use crate::connection::RemoteConnection;
+use crate::job::JobStatus;
+use crate::queuemanager::QueueManager;
 
 use std::collections::HashMap;
 
@@ -12,7 +12,7 @@ use tracing::debug;
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
     #[error("Connection error:\n{0}")]
-    Connection(#[from] crate::remote_system::connection::Error),
+    Connection(#[from] crate::connection::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error), // #[error()]
     #[error("Invalid file stem from file: {0}")]
@@ -154,9 +154,9 @@ impl Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote_system::connection::RemoteConnection;
-    use crate::remote_system::job::JobStatus;
-    use crate::remote_system::queuemanager::QueueManager;
+    use crate::connection::RemoteConnection;
+    use crate::job::JobStatus;
+    use crate::queuemanager::QueueManager;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -164,7 +164,7 @@ mod tests {
     struct MockConnection {
         commands: RefCell<Vec<String>>,
         uploads: RefCell<Vec<(Vec<PathBuf>, PathBuf)>>,
-        downloads: RefCell<Vec<(PathBuf, PathBuf, String)>>,
+        downloads: RefCell<Vec<(PathBuf, PathBuf)>>,
         mock_output: RefCell<HashMap<String, String>>,
     }
 
@@ -180,10 +180,7 @@ mod tests {
     }
 
     impl RemoteConnection for MockConnection {
-        fn execute(
-            &self,
-            command: &str,
-        ) -> Result<String, crate::remote_system::connection::Error> {
+        fn execute(&self, command: &str) -> Result<String, crate::connection::Error> {
             self.commands.borrow_mut().push(command.to_string());
             if let Some(output) = self.mock_output.borrow().get(command) {
                 Ok(output.clone())
@@ -192,7 +189,7 @@ mod tests {
             }
         }
 
-        fn mkdir(&self, _path: &Path) -> Result<(), crate::remote_system::connection::Error> {
+        fn mkdir(&self, _path: &Path) -> Result<(), crate::connection::Error> {
             Ok(())
         }
 
@@ -201,7 +198,7 @@ mod tests {
             local_paths: &[PathBuf],
             remote_dir: &Path,
             _ignore: &[glob::Pattern],
-        ) -> Result<(), crate::remote_system::connection::Error> {
+        ) -> Result<(), crate::connection::Error> {
             self.uploads
                 .borrow_mut()
                 .push((local_paths.to_vec(), remote_dir.to_path_buf()));
@@ -212,14 +209,11 @@ mod tests {
             &self,
             remote_dir: &Path,
             local_dir: &Path,
-            basename: &str,
             _ignore: &[glob::Pattern],
-        ) -> Result<(), crate::remote_system::connection::Error> {
-            self.downloads.borrow_mut().push((
-                remote_dir.to_path_buf(),
-                local_dir.to_path_buf(),
-                basename.to_string(),
-            ));
+        ) -> Result<(), crate::connection::Error> {
+            self.downloads
+                .borrow_mut()
+                .push((remote_dir.to_path_buf(), local_dir.to_path_buf()));
             Ok(())
         }
     }

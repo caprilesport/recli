@@ -1,6 +1,6 @@
-use crate::remote_system::connection::SshConnection;
-use crate::remote_system::job::Job;
-use crate::remote_system::jobs::Jobs;
+use crate::connection::SshConnection;
+use crate::job::Job;
+use crate::jobs::Jobs;
 use std::path::PathBuf;
 
 use tracing::{error, info};

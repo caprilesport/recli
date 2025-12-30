@@ -1,6 +1,6 @@
 use rayon::prelude::*;
-use crate::remote_system::connection::SshConnection;
-use crate::remote_system::jobs::Jobs;
+use crate::connection::SshConnection;
+use crate::jobs::Jobs;
 use std::sync::{Arc, Mutex};
 
 use tracing::{error, info};
@@ -29,7 +29,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                 let guard = arcmtx.lock().unwrap();
                 let job = guard
                     .find_by_id(&id)
-                    .ok_or(crate::remote_system::job::Error::JobNotFound(id))?;
+                    .ok_or(crate::job::Error::JobNotFound(id))?;
                 (job.clone(), job.remote().to_string())
             };
 

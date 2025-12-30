@@ -2,8 +2,8 @@ use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use crate::Context;
-use crate::remote_system::connection::SshConnection;
-use crate::remote_system::jobs::Jobs;
+use crate::connection::SshConnection;
+use crate::jobs::Jobs;
 
 use tracing::error;
 

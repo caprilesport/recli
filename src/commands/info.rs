@@ -1,6 +1,6 @@
 use std::io::{IsTerminal, Write};
-// use crate::remote_system::job::Job;
-use crate::remote_system::jobs::Jobs;
+// use crate::job::Job;
+use crate::jobs::Jobs;
 use anyhow::anyhow;
 use tabled::builder::Builder;
 
