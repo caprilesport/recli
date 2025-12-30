@@ -31,6 +31,7 @@ pub struct Remote {
     work_directory: PathBuf,
     prepare_args: Vec<String>,
     queue_manager: QueueManager,
+    identity_file: Option<PathBuf>,
 }
 
 impl PartialEq<&str> for Remote {
@@ -77,6 +78,10 @@ impl Remote {
     /// This is the base directory where job directories will be created.
     pub fn work_dir(&self) -> &Path {
         &self.work_directory
+    }
+
+    pub fn identity_file(&self) -> Option<PathBuf> {
+        self.identity_file.clone()
     }
 
     // #[cfg(test)]
@@ -227,6 +232,7 @@ mod tests {
             work_directory: PathBuf::from("/remote/work"),
             prepare_args: vec!["arg1".to_string()],
             queue_manager: QueueManager::Pbs,
+            identity_file: None,
         }
     }
 
