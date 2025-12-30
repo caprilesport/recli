@@ -374,7 +374,10 @@ impl<'a> JobQuery<'a> {
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
             let remote_match = check(job.remote(), &remote);
             let name_match = check(job.filename(), &filename);
-            let dir_match = check(job.work_dir().to_str().unwrap(), &directory);
+            let dir_match = job
+                .work_dir()
+                .to_str()
+                .is_some_and(|s| check(s, &directory));
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));

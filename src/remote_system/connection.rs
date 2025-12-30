@@ -16,6 +16,12 @@ pub enum Error {
     Ssh2(#[from] ssh2::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error),
+    #[error("{0}")]
+    InvalidPath(PathBuf),
+    #[error("Could not resolve hostname {0}")]
+    HostNameResolution(String),
+    #[error("{0}")]
+    SystemTimeError(#[from] std::time::SystemTimeError),
     #[error(
         "Command '{command}' failed with exit code {exit_code}
 ---
@@ -91,8 +97,10 @@ impl SshConnection {
     pub fn new(remote: &Remote) -> Result<Self, Error> {
         debug!("Connecting to {:?}", remote.name());
         let target = format!("{}:{}", remote.hostname(), remote.port());
-        // TODO: adress these unwraps, as connect_timeout doesnt accept a vector we need the .next() for now, but there's certainly a better way to throw errros here
-        let socket_adress = target.to_socket_addrs().unwrap().next().unwrap();
+        let socket_adress = target
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| Error::HostNameResolution(remote.hostname().to_string()))?;
         trace!("Using {} as target.", target);
 
         let tcp = match TcpStream::connect_timeout(
@@ -115,18 +123,16 @@ impl SshConnection {
     fn should_upload_file(
         local_path: &Path,
         remote_files: &std::collections::HashMap<String, u64>,
-    ) -> Result<bool, std::io::Error> {
+    ) -> Result<bool, Error> {
         let file_name = local_path
             .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or_else(|| Error::InvalidPath(local_path.to_path_buf()))?
             .to_string();
         let local_meta = std::fs::metadata(local_path)?;
         let local_mtime = local_meta
             .modified()?
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
 
         if let Some(remote_mtime) = remote_files.get(&file_name) {
@@ -146,13 +152,12 @@ impl SshConnection {
     fn should_download_file(
         remote_stat: &ssh2::FileStat,
         local_path: &Path,
-    ) -> Result<bool, std::io::Error> {
+    ) -> Result<bool, Error> {
         if local_path.exists() {
             let local_meta = std::fs::metadata(local_path)?;
             let local_mtime = local_meta
                 .modified()?
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs();
             let remote_mtime = remote_stat.mtime.unwrap_or(0);
             if remote_mtime > local_mtime {
@@ -228,7 +233,13 @@ impl RemoteConnection for SshConnection {
             if Self::should_upload_file(file_path, &remote_files)? {
                 debug!("Uploading {:?} to {:?}", file_path, remote_dir);
                 let mut local_file = std::fs::File::open(file_path)?;
-                let remote_path = remote_dir.join(file_path.file_name().unwrap());
+                let file_name = file_path.file_name().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Path does not have a file name",
+                    )
+                })?;
+                let remote_path = remote_dir.join(file_name);
                 let mut remote_file = sftp.create(remote_path.as_path())?;
                 std::io::copy(&mut local_file, &mut remote_file)?;
             }
@@ -257,7 +268,10 @@ impl RemoteConnection for SshConnection {
                     .to_string_lossy()
                     .starts_with(basename)
             {
-                let local_path = local_dir.join(remote_path.file_name().unwrap());
+                let file_name = remote_path
+                    .file_name()
+                    .ok_or_else(|| Error::InvalidPath(remote_path.clone()))?;
+                let local_path = local_dir.join(file_name);
                 if Self::should_download_file(&stat, &local_path)? {
                     let mut remote_file = sftp.open(&remote_path)?;
                     let mut local_file = std::fs::File::create(&local_path)?;

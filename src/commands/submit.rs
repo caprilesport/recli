@@ -19,7 +19,17 @@ pub struct Args {
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let id = uuid::Uuid::new_v4();
     let remote = ctx.config.get_remote(&args.remote)?;
-    let file_stem = args.inpfile.file_stem().unwrap().to_str().unwrap();
+    let file_stem = args
+        .inpfile
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not extract a valid UTF-8 file stem from the file {:?}",
+                args.inpfile
+            )
+        })?;
+
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
     let internal_id = (jobs.iter().count() + 1) as u16;
 

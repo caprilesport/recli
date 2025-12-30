@@ -1,6 +1,7 @@
 use std::io::{IsTerminal, Write};
 // use crate::remote_system::job::Job;
 use crate::remote_system::jobs::Jobs;
+use anyhow::anyhow;
 use tabled::builder::Builder;
 
 // use tracing::error;
@@ -18,7 +19,10 @@ pub struct Args {
 
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let jobs = Jobs::load_jobs(&ctx.json_file)?;
-    let job = jobs.iter().find(|j| j.id() == &args.job).unwrap();
+    let job = jobs
+        .iter()
+        .find(|j| j.id() == &args.job)
+        .ok_or_else(|| anyhow!("Job with ID {0} not found", args.job))?;
 
     if args.json {
         let json_str = serde_json::to_string_pretty(job)?;
@@ -32,8 +36,18 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         builder.push_record(["remote", job.remote()]);
         builder.push_record(["remote_id", job.remote_id()]);
         builder.push_record(["filename", job.filename()]);
-        builder.push_record(["work_dir", job.work_dir().to_str().unwrap()]);
-        builder.push_record(["remote_dir", job.remote_dir().to_str().unwrap()]);
+        builder.push_record([
+            "work_dir",
+            job.work_dir().to_str().ok_or_else(|| {
+                anyhow!("Job work directory path contains invalid UTF-8 characters.")
+            })?,
+        ]);
+        builder.push_record([
+            "remote_dir",
+            job.remote_dir().to_str().ok_or_else(|| {
+                anyhow!("Job remote directory path contains invalid UTF-8 characters.")
+            })?,
+        ]);
         builder.push_record(["status", job.status().as_str()]);
 
         let mut table = builder.build();

@@ -12,9 +12,11 @@ use tracing::debug;
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
     #[error("Connection error:\n{0}")]
-    ConnectionError(#[from] crate::remote_system::connection::Error),
+    Connection(#[from] crate::remote_system::connection::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error), // #[error()]
+    #[error("Invalid file stem from file: {0}")]
+    InvalidFileStem(PathBuf),
 }
 
 /// Represents a remote computational resource for job execution.
@@ -100,19 +102,21 @@ impl Remote {
         self.prepare(inp_file)?;
 
         connection.mkdir(remote_dir)?;
-        let file_stem = inp_file.file_stem().unwrap().to_str().unwrap();
+        let file_stem = inp_file
+            .file_stem()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or_else(|| Error::InvalidFileStem(inp_file.to_path_buf()))?;
 
         let files_to_send: Vec<PathBuf> = std::fs::read_dir(".")?
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| {
-                path.is_file()
-                    && path
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .starts_with(file_stem)
+                if !path.is_file() {
+                    return false;
+                }
+                path.file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|s| s.starts_with(file_stem))
             })
             .collect();
 

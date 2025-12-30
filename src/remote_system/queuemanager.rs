@@ -145,14 +145,11 @@ impl QueueManager {
     /// * `remote_dir` - The working directory where the job should be executed
     /// * `job_name` - The name of the job script file to submit
     pub fn submit_command(&self, remote_dir: &Path, job_name: &str) -> String {
+        let remote_dir = remote_dir.to_string_lossy();
         match self {
-            Self::Pbs => format!("cd {} && qsub {} ", remote_dir.to_str().unwrap(), job_name),
-            Self::Pueue => format!("cd {} && . ./{} ", remote_dir.to_str().unwrap(), job_name),
-            Self::Slurm => format!(
-                "cd {} && sbatch {} ",
-                remote_dir.to_str().unwrap(),
-                job_name
-            ),
+            Self::Pbs => format!("cd {} && qsub {} ", remote_dir, job_name),
+            Self::Pueue => format!("cd {} && . ./{} ", remote_dir, job_name),
+            Self::Slurm => format!("cd {} && sbatch {} ", remote_dir, job_name),
         }
     }
 }

@@ -146,7 +146,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
     jobs.iter().for_each(|j| {
         let j_uuid = j.uuid().to_string();
         let id = j.id().to_string();
-        let work_dir = j.work_dir().to_str().unwrap();
+        let work_dir = j.work_dir().to_string_lossy().to_string();
         let submit_time = j
             .submit_time()
             .with_timezone(&chrono::Local)
@@ -161,7 +161,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
         };
         let mut row = vec![
             &id,
-            work_dir,
+            &work_dir,
             j.filename(),
             j.status().as_str(),
             j.remote(),
