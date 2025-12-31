@@ -12,7 +12,7 @@ use crate::jobs::{Jobs, Match};
 ///
 /// Shows a table of all tracked jobs. You can use the flags below to filter
 /// the jobs that are displayed.
-#[derive(Debug, clap::Args)]
+#[derive(Debug, clap::Args, Default)]
 pub struct Args {
     /// Show all jobs
     #[arg(long, short, action)]

@@ -19,10 +19,9 @@ mod remote;
     computing (HPC) clusters or servers."
 )]
 #[command(propagate_version = true)]
-#[command(arg_required_else_help = true)]
 struct Cli {
     #[command(subcommand)]
-    mode: Mode,
+    mode: Option<Mode>,
     /// Verbosity options.
     #[command(flatten)]
     verbosity: clap_verbosity_flag::Verbosity<clap_verbosity_flag::InfoLevel>,
@@ -78,11 +77,15 @@ fn main() -> anyhow::Result<()> {
     let ctx = Context::new(&cli)?;
 
     match cli.mode {
-        Mode::Fetch(args) => commands::fetch::execute(args, ctx)?,
-        Mode::Submit(args) => commands::submit::execute(args, ctx)?,
-        Mode::Status(args) => commands::status::execute(args, ctx)?,
-        Mode::Sync(args) => commands::sync::execute(args, ctx)?,
-        Mode::Info(args) => commands::info::execute(args, ctx)?,
+        Some(Mode::Fetch(args)) => commands::fetch::execute(args, ctx)?,
+        Some(Mode::Submit(args)) => commands::submit::execute(args, ctx)?,
+        Some(Mode::Status(args)) => commands::status::execute(args, ctx)?,
+        Some(Mode::Sync(args)) => commands::sync::execute(args, ctx)?,
+        Some(Mode::Info(args)) => commands::info::execute(args, ctx)?,
+        None => {
+            let args = commands::status::Args::default();
+            commands::status::execute(args, ctx)?;
+        }
     };
 
     Ok(())
