@@ -95,20 +95,20 @@ impl Job {
         &self.status
     }
 
-    pub fn set_status(&mut self, status: JobStatus) {
-        self.status = status;
-    }
-
     pub fn filename(&self) -> &str {
         &self.filename
     }
 
-    pub fn set_sync_time(&mut self, time: DateTime<Utc>) {
-        self.sync_time = Some(time);
-    }
-
     pub fn sync_time(&self) -> &Option<DateTime<Utc>> {
         &self.sync_time
+    }
+
+    pub fn set_status(&mut self, status: JobStatus) {
+        self.status = status;
+    }
+
+    pub fn set_sync_time(&mut self, time: DateTime<Utc>) {
+        self.sync_time = Some(time);
     }
 }
 

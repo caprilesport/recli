@@ -1,10 +1,10 @@
+use crate::jobs::Jobs;
 use chrono::{Duration, Utc};
 use std::io::{IsTerminal, Write};
 use tabled::builder::Builder;
 use uuid::Uuid;
 
 use crate::job::{Job, JobStatus};
-use crate::jobs::{Jobs, Match};
 
 /// Displays the status of jobs, with optional filters.
 /// By default it doesn't show jobs that are synced
@@ -80,11 +80,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     }
 
     if let Some(name) = &args.name {
-        query = query.with_name(Match::Contains(name));
+        query = query.with_name(name);
     }
 
     if let Some(remote) = &args.remote {
-        query = query.with_remote(Match::Contains(remote));
+        query = query.with_remote(remote);
     }
 
     if let Some(remote_id) = &args.remote_id {
@@ -92,7 +92,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     }
 
     if let Some(directory) = &args.directory {
-        query = query.with_dir(Match::Contains(directory));
+        query = query.with_dir(directory);
     }
 
     if let Some(status) = &args.status {

@@ -229,12 +229,6 @@ impl Jobs {
     }
 }
 
-#[derive(Copy, Clone)]
-pub enum Match<'a> {
-    Exact(&'a str),
-    Contains(&'a str),
-}
-
 /// A query builder for filtering and searching jobs.
 ///
 /// `JobQuery` provides a builder interface for constructing complex queries against a job collection. Each method adds a filter condition, and filters are combined with AND logic.
@@ -258,9 +252,9 @@ pub struct JobQuery<'a> {
     synced: Option<bool>,
     status: Option<&'a JobStatus>,
     remote_id: Option<&'a str>,
-    remote: Option<Match<'a>>,
-    filename: Option<Match<'a>>,
-    directory: Option<Match<'a>>,
+    remote: Option<&'a str>,
+    filename: Option<&'a str>,
+    directory: Option<&'a str>,
     submit_time_after: Option<DateTime<Utc>>,
     sync_time_after: Option<DateTime<Utc>>,
 }
@@ -308,18 +302,18 @@ impl<'a> JobQuery<'a> {
         self
     }
 
-    pub fn with_remote(mut self, remote_matcher: Match<'a>) -> Self {
-        self.remote = Some(remote_matcher);
+    pub fn with_remote(mut self, remote: &'a str) -> Self {
+        self.remote = Some(remote);
         self
     }
 
-    pub fn with_name(mut self, name_matcher: Match<'a>) -> Self {
-        self.filename = Some(name_matcher);
+    pub fn with_name(mut self, name: &'a str) -> Self {
+        self.filename = Some(name);
         self
     }
 
-    pub fn with_dir(mut self, dir_matcher: Match<'a>) -> Self {
-        self.directory = Some(dir_matcher);
+    pub fn with_dir(mut self, dir: &'a str) -> Self {
+        self.directory = Some(dir);
         self
     }
 
@@ -359,25 +353,16 @@ impl<'a> JobQuery<'a> {
             sync_time_after,
         } = self;
 
-        let check = |value: &str, matcher: &Option<Match<'a>>| {
-            matcher.as_ref().is_none_or(|m| match m {
-                Match::Exact(val) => value == *val,
-                Match::Contains(val) => value.contains(val),
-            })
-        };
-
         jobs.iter().filter(move |job| {
             let id_match = id.is_none_or(|id| id == job.id());
             let uuid_match = uuid.is_none_or(|id| id == job.uuid());
             let synced_match = synced.is_none_or(|synced| synced == job.synced());
             let status_match = status.is_none_or(|st| st == job.status());
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
-            let remote_match = check(job.remote(), &remote);
-            let name_match = check(job.filename(), &filename);
-            let dir_match = job
-                .work_dir()
-                .to_str()
-                .is_some_and(|s| check(s, &directory));
+            let remote_match = remote.is_none_or(|r| job.remote().contains(r));
+            let name_match = filename.is_none_or(|f| job.filename().contains(f));
+            let dir_match =
+                directory.is_none_or(|d| job.work_dir().to_str().is_some_and(|s| s.contains(d)));
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
