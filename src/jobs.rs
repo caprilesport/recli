@@ -93,7 +93,13 @@ impl Jobs {
     pub fn update(&mut self, statuses: HashMap<String, JobStatus>, remotename: &str) {
         let mut changed_jobs = Vec::new();
 
-        for job in self.jobs.iter_mut() {
+        // we filter by non-synced jobs just to be sure that we don't have ID collision
+        // in case of a queue reset or something similar.
+        for job in self
+            .jobs
+            .iter_mut()
+            .filter(|j| !j.synced() && j.remote() == remotename)
+        {
             let old_status = *job.status();
             let status = statuses.get(job.remote_id());
 
