@@ -1,10 +1,12 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 use clap_verbosity_flag::LevelFilter;
 
 use crate::config::Config;
 
 mod commands;
 mod config;
+
 mod connection;
 mod job;
 mod jobs;
@@ -34,6 +36,11 @@ enum Mode {
     Sync(commands::sync::Args),
     Status(commands::status::Args),
     Info(commands::info::Args),
+    /// Generate shell completion scripts
+    Completions {
+        /// The shell to generate the script for
+        shell: Shell,
+    },
 }
 
 /// Running context of the application
@@ -57,7 +64,6 @@ impl Context {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Initialize the logger with the verbosity level from the CLI.
     let loglevel = match cli.verbosity.log_level_filter() {
         LevelFilter::Off => tracing_subscriber::filter::LevelFilter::OFF,
         LevelFilter::Warn => tracing_subscriber::filter::LevelFilter::WARN,
@@ -68,14 +74,24 @@ fn main() -> anyhow::Result<()> {
     };
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
+    // We match the completions early, as if there is no config file yet we can generate
+    // the completions with no problem.
+    if let Some(Mode::Completions { shell }) = cli.mode {
+        let mut cmd = Cli::command();
+        let bin_name = cmd.get_name().to_string();
+        generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+        return Ok(());
+    }
+
     let ctx = Context::new()?;
 
     match cli.mode {
+        Some(Mode::Completions { shell: _ }) => unreachable!(),
         Some(Mode::Fetch(args)) => commands::fetch::execute(args, ctx)?,
         Some(Mode::Submit(args)) => commands::submit::execute(args, ctx)?,
-        Some(Mode::Status(args)) => commands::status::execute(args, ctx)?,
         Some(Mode::Sync(args)) => commands::sync::execute(args, ctx)?,
         Some(Mode::Info(args)) => commands::info::execute(args, ctx)?,
+        Some(Mode::Status(args)) => commands::status::execute(args, ctx)?,
         None => {
             let args = commands::status::Args::default();
             commands::status::execute(args, ctx)?;
