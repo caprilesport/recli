@@ -25,9 +25,6 @@ struct Cli {
     /// Verbosity options.
     #[command(flatten)]
     verbosity: clap_verbosity_flag::Verbosity<clap_verbosity_flag::InfoLevel>,
-    /// Sync all files, ignoring the ignore file
-    #[arg(long, global = true, default_value_t = false)]
-    sync_all_files: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -48,11 +45,8 @@ struct Context {
 }
 
 impl Context {
-    fn new(cli: &Cli) -> anyhow::Result<Self> {
-        let mut config = Config::read()?;
-        if cli.sync_all_files {
-            config.ignore.clear();
-        }
+    fn new() -> anyhow::Result<Self> {
+        let config = Config::read()?;
         Ok(Self {
             config,
             json_file: Config::get_dir()?.join("jobs.json"),
@@ -74,7 +68,7 @@ fn main() -> anyhow::Result<()> {
     };
     tracing_subscriber::fmt().with_max_level(loglevel).init();
 
-    let ctx = Context::new(&cli)?;
+    let ctx = Context::new()?;
 
     match cli.mode {
         Some(Mode::Fetch(args)) => commands::fetch::execute(args, ctx)?,

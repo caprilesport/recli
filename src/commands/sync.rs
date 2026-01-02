@@ -17,9 +17,16 @@ pub struct Args {
     job_id: Option<uuid::Uuid>,
     #[arg(short, long, default_value_t = false)]
     update_status: bool,
+    /// Sync all files, ignoring the ignore file
+    #[arg(long, global = true, default_value_t = false)]
+    sync_all_files: bool,
 }
 
-pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
+    if args.sync_all_files {
+        ctx.config.ignore.clear();
+    }
+
     let jobs = Jobs::load_jobs(&ctx.json_file)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
 
