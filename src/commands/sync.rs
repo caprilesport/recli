@@ -1,6 +1,6 @@
-use rayon::prelude::*;
 use crate::connection::SshConnection;
 use crate::jobs::Jobs;
+use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use tracing::{error, info};
@@ -44,7 +44,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to sync job {}: {}", id, e);
+                    error!("Failed to sync job {}: {}", job.id(), e);
                     return Err(e.into());
                 }
             }
@@ -88,11 +88,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
                                 if let Err(e) =
                                     arcmtx.lock().unwrap().update_synced_job(id, sync_time)
                                 {
-                                    error!("Failed to sync job {}: {}", id, e);
+                                    error!("Failed to sync job {}: {}", job.id(), e);
                                 };
                             }
                             Err(e) => {
-                                error!("Failed to sync job {}: {}", id, e);
+                                error!("Failed to sync job {}: {}", job.id(), e);
                             }
                         }
                     });

@@ -55,9 +55,10 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     )?;
 
     info!(
-        "Job submitted successfully with id: {}. Remote id: {}",
-        id,
-        &job.remote_id()
+        "Job {} with id: {} and remote id: {} submitted successfully ",
+        job.filename(),
+        job.id(),
+        job.remote_id()
     );
 
     jobs.add(job);
