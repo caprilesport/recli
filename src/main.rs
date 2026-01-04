@@ -6,6 +6,7 @@ use crate::config::Config;
 
 mod commands;
 mod config;
+mod manifest;
 
 mod connection;
 mod job;
