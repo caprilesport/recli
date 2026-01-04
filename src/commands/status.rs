@@ -162,7 +162,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
         let mut row = vec![
             &id,
             &work_dir,
-            j.filename(),
+            j.name(),
             j.status().as_str(),
             j.remote(),
             &submit_time,

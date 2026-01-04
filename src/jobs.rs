@@ -119,7 +119,7 @@ impl Jobs {
             for job in changed_jobs {
                 info!(
                     "  - Job {} with ID {} @ {}: changed to {:?}",
-                    job.filename(),
+                    job.name(),
                     job.id(),
                     job.remote(),
                     job.status()
@@ -140,7 +140,7 @@ impl Jobs {
     ) -> Result<chrono::DateTime<Utc>, Error> {
         info!(
             "Syncing job {} id {} @ {}",
-            job.filename(),
+            job.name(),
             job.id(),
             job.remote()
         );
@@ -259,7 +259,7 @@ pub struct JobQuery<'a> {
     status: Option<&'a JobStatus>,
     remote_id: Option<&'a str>,
     remote: Option<&'a str>,
-    filename: Option<&'a str>,
+    name: Option<&'a str>,
     directory: Option<&'a str>,
     submit_time_after: Option<DateTime<Utc>>,
     sync_time_after: Option<DateTime<Utc>>,
@@ -276,7 +276,7 @@ impl<'a> JobQuery<'a> {
             status: None,
             remote: None,
             remote_id: None,
-            filename: None,
+            name: None,
             directory: None,
             submit_time_after: None,
             sync_time_after: None,
@@ -314,7 +314,7 @@ impl<'a> JobQuery<'a> {
     }
 
     pub fn with_name(mut self, name: &'a str) -> Self {
-        self.filename = Some(name);
+        self.name = Some(name);
         self
     }
 
@@ -353,7 +353,7 @@ impl<'a> JobQuery<'a> {
             status,
             remote_id,
             remote,
-            filename,
+            name,
             directory,
             submit_time_after,
             sync_time_after,
@@ -366,7 +366,7 @@ impl<'a> JobQuery<'a> {
             let status_match = status.is_none_or(|st| st == job.status());
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
             let remote_match = remote.is_none_or(|r| job.remote().contains(r));
-            let name_match = filename.is_none_or(|f| job.filename().contains(f));
+            let name_match = name.is_none_or(|f| job.name().contains(f));
             let dir_match =
                 directory.is_none_or(|d| job.work_dir().to_str().is_some_and(|s| s.contains(d)));
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);

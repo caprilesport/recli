@@ -35,7 +35,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         builder.push_record(["UUID", &job.uuid().to_string()]);
         builder.push_record(["remote", job.remote()]);
         builder.push_record(["remote_id", job.remote_id()]);
-        builder.push_record(["filename", job.filename()]);
+        builder.push_record(["name", job.name()]);
         builder.push_record([
             "work_dir",
             job.work_dir().to_str().ok_or_else(|| {
