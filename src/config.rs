@@ -44,21 +44,26 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_remote(&self, remote: &str) -> Result<&Remote, ConfigError> {
+    pub fn get_remote(&self, remote: &str) -> Result<&Remote, Error> {
         self.remotes
             .iter()
             .find(|r| r.name() == remote)
-            .ok_or(ConfigError::RemoteNotFound(remote.to_string()))
+            .ok_or(Error::RemoteNotFound(remote.to_string()))
     }
 
+    /// Returns the path to the user’s config directory.
+    ///
+    /// The returned value depends on the operating system and is either a Some, containing a value specified below, or a None.
+    ///
+    /// In linux, returns $XDG_CONFIG_HOME/recli or $HOME/.config/recli
+    /// in macOS, returns $HOME/Library/Application Support/recli
+    /// In windows, returns {FOLDERID_RoamingAppData}\recli
     pub fn get_dir() -> std::io::Result<std::path::PathBuf> {
-        // let mut config_dir = dirs::config_dir().ok_or(std::io::Error::new(
+        // let config_dir = dirs::config_dir().ok_or(std::io::Error::new(
         //     std::io::ErrorKind::NotFound,
         //     "OS Config directory not found",
-        // ))?;
-        // config_dir.push("recli");
-        let mut config_dir = std::env::current_dir()?;
-        config_dir.push("tmp");
+        // ))?.join("recli");
+        let config_dir = std::env::current_dir()?.join("tmp");
         Ok(config_dir)
     }
 }
