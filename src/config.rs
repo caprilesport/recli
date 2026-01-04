@@ -10,7 +10,7 @@ pub struct Config {
 }
 
 #[derive(thiserror::Error, std::fmt::Debug)]
-pub enum ConfigError {
+pub enum Error {
     #[error("IO error, {0}")]
     IO(#[from] std::io::Error),
     #[error("Error in config.toml file: {0}")]
@@ -22,7 +22,7 @@ pub enum ConfigError {
 }
 
 impl Config {
-    pub fn read() -> Result<Self, ConfigError> {
+    pub fn read() -> Result<Self, Error> {
         let config_dir = Config::get_dir()?;
         let config_file = config_dir.join("config.toml");
         trace!("Attempting to read {:?}", config_file);
