@@ -7,7 +7,7 @@ use crate::queuemanager::QueueManager;
 
 use std::collections::HashMap;
 
-use tracing::debug;
+// use tracing::debug;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
@@ -29,9 +29,19 @@ pub struct Remote {
     port: u16,
     user: String,
     work_directory: PathBuf,
-    prepare_args: Vec<String>,
     queue_manager: QueueManager,
     identity_file: Option<PathBuf>,
+    defaults: Option<RemoteDefault>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct RemoteDefault {
+    pub template: Option<String>,
+    pub queue: Option<String>,
+    pub nprocs: Option<u32>,
+    pub memory: Option<String>,
+    pub walltime: Option<String>,
+    pub name: Option<String>,
 }
 
 impl PartialEq<&str> for Remote {
@@ -48,12 +58,12 @@ impl Remote {
     /// # Errors
     ///
     /// Returns an error if the preparation command fails.
-    fn prepare(&self, input_file: &std::path::Path) -> Result<(), Error> {
-        let mut args = self.prepare_args.clone();
-        debug!("Running command: {:?}, {:?}", "qprep", args);
-        args.push(input_file.to_string_lossy().into_owned());
-        let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
-        debug!("qprep output: {:?}", String::from_utf8(qprep_output.stdout));
+    fn prepare(&self, _input_file: &std::path::Path) -> Result<(), Error> {
+        // let mut args = self.prepare_args.clone();
+        // debug!("Running command: {:?}, {:?}", "qprep", args);
+        // args.push(input_file.to_string_lossy().into_owned());
+        // let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
+        // debug!("qprep output: {:?}", String::from_utf8(qprep_output.stdout));
         Ok(())
     }
 
@@ -230,9 +240,9 @@ mod tests {
             port: 22,
             user: "testuser".to_string(),
             work_directory: PathBuf::from("/remote/work"),
-            prepare_args: vec!["arg1".to_string()],
             queue_manager: QueueManager::Pbs,
             identity_file: None,
+            defaults: None,
         }
     }
 
