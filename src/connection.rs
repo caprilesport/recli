@@ -70,12 +70,7 @@ pub trait RemoteConnection {
     /// # Errors
     ///
     /// Returns an error if file reading or uploading fails.
-    fn upload_files(
-        &self,
-        local_paths: &[PathBuf],
-        remote_dir: &Path,
-        ignore: &[glob::Pattern],
-    ) -> Result<(), Error>;
+    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error>;
 
     /// Downloads files from a remote directory to a local one.
     ///
@@ -213,35 +208,6 @@ impl SshConnection {
         Ok(())
     }
 
-    /// Checks if a local file should be uploaded by comparing modification times.
-    fn should_upload_file(
-        local_path: &Path,
-        remote_files: &std::collections::HashMap<String, u64>,
-    ) -> Result<bool, Error> {
-        let file_name = local_path
-            .file_name()
-            .and_then(std::ffi::OsStr::to_str)
-            .ok_or_else(|| Error::InvalidPath(local_path.to_path_buf()))?
-            .to_string();
-        let local_meta = std::fs::metadata(local_path)?;
-        let local_mtime = local_meta
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-
-        if let Some(remote_mtime) = remote_files.get(&file_name) {
-            if local_mtime > *remote_mtime {
-                debug!("Local file {:?} is newer, uploading.", local_path);
-                Ok(true)
-            } else {
-                debug!("Remote file {:?} is up-to-date, skipping.", file_name);
-                Ok(false)
-            }
-        } else {
-            Ok(true)
-        }
-    }
-
     /// Checks if a remote file should be downloaded by comparing modification times.
     fn should_download_file(
         remote_stat: &ssh2::FileStat,
@@ -301,42 +267,21 @@ impl RemoteConnection for SshConnection {
         Ok(())
     }
 
-    fn upload_files(
-        &self,
-        local_paths: &[PathBuf],
-        remote_dir: &Path,
-        ignore: &[glob::Pattern],
-    ) -> Result<(), Error> {
+    fn upload_files(&self, local_paths: &[PathBuf], remote_dir: &Path) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
-        let remote_files: std::collections::HashMap<String, u64> = sftp
-            .readdir(remote_dir)?
-            .into_iter()
-            .filter_map(|(path, stat)| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| (name.to_string(), stat.mtime.unwrap_or(0)))
-            })
-            .collect();
 
         for file_path in local_paths {
-            if ignore.iter().any(|p| p.matches_path(file_path)) {
-                debug!("Ignoring {:?} due to ignore pattern", file_path);
-                continue;
-            }
-
-            if Self::should_upload_file(file_path, &remote_files)? {
-                debug!("Uploading {:?} to {:?}", file_path, remote_dir);
-                let mut local_file = std::fs::File::open(file_path)?;
-                let file_name = file_path.file_name().ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Path does not have a file name",
-                    )
-                })?;
-                let remote_path = remote_dir.join(file_name);
-                let mut remote_file = sftp.create(remote_path.as_path())?;
-                std::io::copy(&mut local_file, &mut remote_file)?;
-            }
+            debug!("Uploading {:?} to {:?}", file_path, remote_dir);
+            let mut local_file = std::fs::File::open(file_path)?;
+            let file_name = file_path.file_name().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Path does not have a file name",
+                )
+            })?;
+            let remote_path = remote_dir.join(file_name);
+            let mut remote_file = sftp.create(remote_path.as_path())?;
+            std::io::copy(&mut local_file, &mut remote_file)?;
         }
         Ok(())
     }
