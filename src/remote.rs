@@ -15,8 +15,6 @@ pub enum Error {
     Connection(#[from] crate::connection::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error), // #[error()]
-    #[error("Invalid file stem from file: {0}")]
-    InvalidFileStem(PathBuf),
 }
 
 /// Represents a remote computational resource for job execution.
@@ -51,22 +49,6 @@ impl PartialEq<&str> for Remote {
 }
 
 impl Remote {
-    /// Prepares input files for submission using the configured preparation command.
-    ///
-    /// Typically runs a local "qprep" command to generate necessary job files before uploading to the remote.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the preparation command fails.
-    fn prepare(&self, _input_file: &std::path::Path) -> Result<(), Error> {
-        // let mut args = self.prepare_args.clone();
-        // debug!("Running command: {:?}, {:?}", "qprep", args);
-        // args.push(input_file.to_string_lossy().into_owned());
-        // let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
-        // debug!("qprep output: {:?}", String::from_utf8(qprep_output.stdout));
-        Ok(())
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -101,43 +83,25 @@ impl Remote {
 
     /// Submits a job to the remote queue manager.
     ///
-    /// Prepares input files, creates a remote job directory, uploads necessary files,
+    /// Creates a remote job directory, uploads necessary files,
     /// and submits the job to the queue manager. Returns the remote job ID.
     ///
     /// # Errors
     ///
-    /// Returns an error if file preparation, upload, or submission fails.
+    /// Returns an error if there are no permissions to create the remote directory, of upload the files fails, or if the submission command fails.
     pub fn submit(
         &self,
-        inp_file: &Path,
+        job_name: &str,
         connection: &dyn RemoteConnection,
         remote_dir: &Path,
-        ignore: &[glob::Pattern],
+        files_to_send: Vec<PathBuf>,
     ) -> Result<String, Error> {
-        self.prepare(inp_file)?;
-
         connection.mkdir(remote_dir)?;
-        let file_stem = inp_file
-            .file_stem()
-            .and_then(std::ffi::OsStr::to_str)
-            .ok_or_else(|| Error::InvalidFileStem(inp_file.to_path_buf()))?;
+        connection.upload_files(&files_to_send, remote_dir)?;
 
-        let files_to_send: Vec<PathBuf> = std::fs::read_dir(".")?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                if !path.is_file() {
-                    return false;
-                }
-                path.file_name()
-                    .and_then(std::ffi::OsStr::to_str)
-                    .is_some_and(|s| s.starts_with(file_stem))
-            })
-            .collect();
+        // now we need to write the rendered template to a file to submit
+        let job_script_name = format!("{}.job", job_name);
 
-        connection.upload_files(&files_to_send, remote_dir, ignore)?;
-
-        let job_script_name = format!("{}.job", file_stem);
         let command = self
             .queue_manager
             .submit_command(remote_dir, &job_script_name);
@@ -212,7 +176,6 @@ mod tests {
             &self,
             local_paths: &[PathBuf],
             remote_dir: &Path,
-            _ignore: &[glob::Pattern],
         ) -> Result<(), crate::connection::Error> {
             self.uploads
                 .borrow_mut()
