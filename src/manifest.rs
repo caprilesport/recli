@@ -1,13 +1,18 @@
 // use crate::config::Config;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use std::path::PathBuf;
 
-// #[derive(thiserror::Error, std::fmt::Debug)]
-// pub enum Error {
-//     #[error("IO error, {0}")]
-//     IO(#[from] std::io::Error),
-// }
+#[derive(thiserror::Error, std::fmt::Debug)]
+pub enum Error {
+    #[error("IO error, {0}")]
+    IO(#[from] std::io::Error),
+    #[error("Pattern error, {0}")]
+    Pattern(#[from] glob::PatternError),
+    #[error("Other glob error {0}")]
+    ReadPath(#[from] glob::GlobError),
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct JobManifest {
@@ -45,11 +50,25 @@ pub struct Files {
     pub include_glob: Vec<String>,
 }
 
-// impl Files {
-//     pub fn collapse(self) -> Vec<PathBuf> {
-//         unimplemented!()
-//     }
-// }
+impl Files {
+    /// Parses all the globs in the include_glob field, and merges all the paths that match with the files included in self.include
+    pub fn collapse(mut self) -> Result<Vec<PathBuf>, Error> {
+        let mut files_to_send = vec![];
+        for pattern in self.include_glob {
+            for path in glob::glob(&pattern)? {
+                match path {
+                    Ok(p) => files_to_send.push(p),
+                    Err(e) => {
+                        error!("{}", e);
+                        continue;
+                    }
+                }
+            }
+        }
+        files_to_send.append(&mut self.include);
+        Ok(files_to_send)
+    }
+}
 
 // impl JobManifest {
 //     pub fn validate(&self) -> Result<(), Error> {
