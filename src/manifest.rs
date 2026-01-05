@@ -45,7 +45,7 @@ pub struct Exec {
 }
 
 impl JobManifest {
-    /// Parses all the globs in the include field, and merges all the paths that match with the files included in self.include
+    /// Parses all the globs in the files input and returns a vector containing all matched files.
     pub fn build_files(&self) -> Result<Vec<PathBuf>, Error> {
         let mut files_to_send = vec![];
         for pattern in &self.files {

@@ -15,15 +15,17 @@ pub struct Args {
 
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     debug!("Parsing input file {:?}", args.input_file);
+    // right now the manifest should be self contained.
+    // next step is implementing some merging behaviour for the default defined in the config file, cli flags and and the toml manifest.
     let manifest: JobManifest = toml::from_str(&std::fs::read_to_string(&args.input_file)?)?;
     let current_dir = std::env::current_dir()?;
     let manifest_path = current_dir.clone().join(args.input_file);
 
-    // this only resolves files in the cwd, for nested submission (e.g. recli submit some-dir/submitfile.toml it should probably look for files inside some-dir? otherwise we should check if the file is in the same directory and return an error. dont know how to handle this yet..)
+    // this only resolves files in the cwd, for nested submission (e.g. recli submit some-dir/submitfile.toml it should probably look for files inside some-dir, otherwise we should check if the file is in the same directory and return an error. dont know how to handle this yet..)
     let files_to_send: Vec<PathBuf> = manifest.build_files()?;
 
     let config_dir = crate::Config::get_dir()?;
-    let mut templates_glob = config_dir.to_str().unwrap().to_owned();
+    let mut templates_glob = config_dir.to_string_lossy().into_owned();
     templates_glob.push_str("/templates/*");
     let tera = Tera::new(&templates_glob)?;
 
