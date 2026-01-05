@@ -23,7 +23,7 @@ pub struct JobManifest {
     pub spec: Spec,
     pub exec: Exec,
     #[serde(default)]
-    pub files: Files,
+    pub files: Vec<String>,
     pub context: toml::Value,
 }
 
@@ -44,18 +44,12 @@ pub struct Exec {
     pub setup_commands: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Default, Serialize)]
-pub struct Files {
-    pub include: Vec<PathBuf>,
-    pub include_glob: Vec<String>,
-}
-
-impl Files {
-    /// Parses all the globs in the include_glob field, and merges all the paths that match with the files included in self.include
-    pub fn collapse(mut self) -> Result<Vec<PathBuf>, Error> {
+impl JobManifest {
+    /// Parses all the globs in the include field, and merges all the paths that match with the files included in self.include
+    pub fn build_files(&self) -> Result<Vec<PathBuf>, Error> {
         let mut files_to_send = vec![];
-        for pattern in self.include_glob {
-            for path in glob::glob(&pattern)? {
+        for pattern in &self.files {
+            for path in glob::glob(pattern)? {
                 match path {
                     Ok(p) => files_to_send.push(p),
                     Err(e) => {
@@ -65,17 +59,6 @@ impl Files {
                 }
             }
         }
-        files_to_send.append(&mut self.include);
         Ok(files_to_send)
     }
 }
-
-// impl JobManifest {
-//     pub fn validate(&self) -> Result<(), Error> {
-//         unimplemented!()
-//     }
-
-//     pub fn merge(&self, _cfg: Config) -> Result<Self, Error> {
-//         unimplemented!()
-//     }
-// }
