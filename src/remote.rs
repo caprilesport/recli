@@ -29,7 +29,7 @@ pub struct Remote {
     work_directory: PathBuf,
     queue_manager: QueueManager,
     identity_file: Option<PathBuf>,
-    defaults: Option<RemoteDefault>,
+    default: Option<RemoteDefault>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -91,7 +91,7 @@ impl Remote {
     /// Returns an error if there are no permissions to create the remote directory, of upload the files fails, or if the submission command fails.
     pub fn submit(
         &self,
-        job_name: &str,
+        job_file: &str,
         connection: &dyn RemoteConnection,
         remote_dir: &Path,
         files_to_send: Vec<PathBuf>,
@@ -99,12 +99,7 @@ impl Remote {
         connection.mkdir(remote_dir)?;
         connection.upload_files(&files_to_send, remote_dir)?;
 
-        // now we need to write the rendered template to a file to submit
-        let job_script_name = format!("{}.job", job_name);
-
-        let command = self
-            .queue_manager
-            .submit_command(remote_dir, &job_script_name);
+        let command = self.queue_manager.submit_command(remote_dir, job_file);
 
         let output = connection.execute(&command)?;
         let remote_id = self.queue_manager.get_id(output);
@@ -205,7 +200,7 @@ mod tests {
             work_directory: PathBuf::from("/remote/work"),
             queue_manager: QueueManager::Pbs,
             identity_file: None,
-            defaults: None,
+            default: None,
         }
     }
 
