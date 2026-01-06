@@ -1,6 +1,6 @@
 // use crate::config::Config;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use tera::{Context, Tera};
 
@@ -61,9 +61,9 @@ impl JobManifest {
         Ok(manifest)
     }
 
-    // TODO: add debug information
     /// Parses all the globs in the files input and returns a vector containing all matched files.
     fn build_files(&self) -> Result<Vec<PathBuf>, Error> {
+        debug!("Building files list to send");
         let mut files_to_send = vec![];
         for pattern in &self.files {
             for path in glob::glob(pattern)? {
@@ -76,19 +76,21 @@ impl JobManifest {
                 }
             }
         }
+        debug!("List of files that will be sent: {:?}", &files_to_send);
         Ok(files_to_send)
     }
 
-    // TODO: add debug information
     fn load_templates() -> Result<Tera, Error> {
         let config_dir = crate::config::Config::get_dir()?;
         let mut templates_glob = config_dir.to_string_lossy().into_owned();
         templates_glob.push_str("/templates/*");
+        debug!("loading templates: {:?}", templates_glob);
         let tera = Tera::new(&templates_glob)?;
+        let template_list: Vec<&str> = tera.get_template_names().collect();
+        debug!("Following templates were parsed: {:?}", &template_list);
         Ok(tera)
     }
 
-    // TODO: add debug information
     /// render a template to a (self.spec.name).job file
     /// this functions is also building all the files that should be uploaded and returning them
     pub fn build(&self) -> Result<Vec<PathBuf>, Error> {
@@ -101,12 +103,14 @@ impl JobManifest {
         context.try_insert("files", &files_to_send)?;
         context.try_insert("context", &self.context)?;
 
+        debug!("Rendering template: {:?}", &self.template);
         let rendered = tera_instance.render(&self.template, &context)?;
 
         let job_name = format!("{}.job", &self.spec.name);
 
         // create the rendered template
-        std::fs::write(job_name, rendered)?;
+        std::fs::write(&job_name, rendered)?;
+        debug!("Writing rendered template to {:?}", &job_name);
         let job_file = format!("{}.job", &self.spec.name);
 
         files_to_send.push(job_file.clone().into());
