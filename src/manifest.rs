@@ -1,6 +1,5 @@
-// use crate::config::Config;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 
 use tera::{Context, Tera};
 
@@ -24,13 +23,14 @@ pub enum Error {
 pub struct JobManifest {
     pub remote: String,
     pub template: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
     pub spec: Spec,
     pub exec: Exec,
-    #[serde(default)]
     pub files: Vec<String>,
-    pub context: toml::Value,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub context: Option<toml::Value>,
+    #[serde(default)]
+    dir: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,12 +52,17 @@ pub struct Exec {
 
 impl JobManifest {
     /// Create a JobManifest by parsing a toml file
-    pub fn from_file(file: &std::path::Path) -> Result<Self, Error> {
+    pub fn read(file: &std::path::Path) -> Result<Self, Error> {
         debug!("Parsing file {:?}", file);
         // right now the manifest should be self contained.
         // next step is implementing some merging behaviour for the default defined in the config file, cli flags and the toml manifest.
         let manifest_str = std::fs::read_to_string(file)?;
-        let manifest = toml::from_str(&manifest_str)?;
+        let mut manifest: JobManifest = toml::from_str(&manifest_str)?;
+        let manifest_path = file
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        manifest.dir = manifest_path;
         Ok(manifest)
     }
 
@@ -66,7 +71,9 @@ impl JobManifest {
         debug!("Building files list to send");
         let mut files_to_send = vec![];
         for pattern in &self.files {
-            for path in glob::glob(pattern)? {
+            let full_pattern = self.dir.join(pattern);
+            let full_pattern_str = full_pattern.to_string_lossy();
+            for path in glob::glob(&full_pattern_str)? {
                 match path {
                     Ok(p) => files_to_send.push(p),
                     Err(e) => {
@@ -101,19 +108,20 @@ impl JobManifest {
         context.try_insert("spec", &self.spec)?;
         context.try_insert("exec", &self.exec)?;
         context.try_insert("files", &files_to_send)?;
-        context.try_insert("context", &self.context)?;
+        if let Some(reclicontext) = &self.context {
+            context.try_insert("context", reclicontext)?;
+        }
 
         debug!("Rendering template: {:?}", &self.template);
         let rendered = tera_instance.render(&self.template, &context)?;
 
-        let job_name = format!("{}.job", &self.spec.name);
+        let job_filename = self.dir.join(format!("{}.job", &self.spec.name));
 
         // create the rendered template
-        std::fs::write(&job_name, rendered)?;
-        debug!("Writing rendered template to {:?}", &job_name);
-        let job_file = format!("{}.job", &self.spec.name);
+        std::fs::write(&job_filename, rendered)?;
+        debug!("Writing rendered template to {:?}", &job_filename);
 
-        files_to_send.push(job_file.clone().into());
+        files_to_send.push(job_filename);
 
         Ok(files_to_send)
     }
