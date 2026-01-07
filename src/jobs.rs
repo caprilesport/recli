@@ -145,7 +145,12 @@ impl Jobs {
             job.remote()
         );
 
-        connection.download_files(job.remote_dir(), job.work_dir(), ignore)?;
+        let manifest_path = job.manifest_file().parent().ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Parent directory of manifest file not found",
+        ))?;
+
+        connection.download_files(job.remote_dir(), manifest_path, ignore)?;
         let sync_time = chrono::Utc::now();
 
         Ok(sync_time)

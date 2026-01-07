@@ -65,6 +65,10 @@ impl Job {
         })
     }
 
+    pub fn manifest_file(&self) -> &std::path::Path {
+        &self.manifest_file
+    }
+
     pub fn uuid(&self) -> &Uuid {
         &self.uuid
     }
