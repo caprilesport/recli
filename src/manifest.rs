@@ -33,7 +33,7 @@ pub struct JobManifest {
     dir: PathBuf,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct Spec {
     pub nodes: u32,
     pub name: String,
@@ -43,7 +43,7 @@ pub struct Spec {
     pub walltime: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct Exec {
     pub command: String,
     pub args: Vec<String>,
