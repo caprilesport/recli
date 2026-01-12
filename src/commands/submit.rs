@@ -11,6 +11,25 @@ use tracing::{error, info};
 pub struct Args {
     /// toml file for submission
     input_file: PathBuf,
+    // /// Which template to render
+    // #[arg(long, short)]
+    // template: String,
+
+    // /// Adds tags for easier querying jobs
+    // #[arg(long, short)]
+    // tags: Vec<String>,
+
+    // /// Choose which files to send
+    // #[arg(long, short)]
+    // files: Vec<PathBuf>,
+
+    // /// Choose which files to send
+    // #[arg(long, short)]
+    // remote: String,
+
+    // /// Choose a profile for the specified remote
+    // #[arg(long, short)]
+    // profile: String,
 }
 
 // TODO: merge the manifest with CLI args and config settings
