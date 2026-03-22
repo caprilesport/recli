@@ -7,7 +7,7 @@ use crate::queuemanager::QueueManager;
 
 use std::collections::HashMap;
 
-use tracing::debug;
+
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
@@ -29,7 +29,6 @@ pub struct Remote {
     port: u16,
     user: String,
     work_directory: PathBuf,
-    prepare_args: Vec<String>,
     queue_manager: QueueManager,
     identity_file: Option<PathBuf>,
 }
@@ -41,22 +40,6 @@ impl PartialEq<&str> for Remote {
 }
 
 impl Remote {
-    /// Prepares input files for submission using the configured preparation command.
-    ///
-    /// Typically runs a local "qprep" command to generate necessary job files before uploading to the remote.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the preparation command fails.
-    fn prepare(&self, input_file: &std::path::Path) -> Result<(), Error> {
-        let mut args = self.prepare_args.clone();
-        debug!("Running command: {:?}, {:?}", "qprep", args);
-        args.push(input_file.to_string_lossy().into_owned());
-        let qprep_output = duct::cmd("qprep", args).stdout_capture().run()?;
-        debug!("qprep output: {:?}", String::from_utf8(qprep_output.stdout));
-        Ok(())
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -99,39 +82,23 @@ impl Remote {
     /// Returns an error if file preparation, upload, or submission fails.
     pub fn submit(
         &self,
-        inp_file: &Path,
+        script: &Path,
+        extra_files: &[PathBuf],
         connection: &dyn RemoteConnection,
         remote_dir: &Path,
-        ignore: &[glob::Pattern],
     ) -> Result<String, Error> {
-        self.prepare(inp_file)?;
-
         connection.mkdir(remote_dir)?;
-        let file_stem = inp_file
-            .file_stem()
+
+        let script_name = script
+            .file_name()
             .and_then(std::ffi::OsStr::to_str)
-            .ok_or_else(|| Error::InvalidFileStem(inp_file.to_path_buf()))?;
+            .ok_or_else(|| Error::InvalidFileStem(script.to_path_buf()))?;
 
-        let files_to_send: Vec<PathBuf> = std::fs::read_dir(".")?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                if !path.is_file() {
-                    return false;
-                }
-                path.file_name()
-                    .and_then(std::ffi::OsStr::to_str)
-                    .is_some_and(|s| s.starts_with(file_stem))
-            })
-            .collect();
+        let mut files_to_send = vec![script.to_path_buf()];
+        files_to_send.extend_from_slice(extra_files);
+        connection.upload_files(&files_to_send, remote_dir, &[])?;
 
-        connection.upload_files(&files_to_send, remote_dir, ignore)?;
-
-        let job_script_name = format!("{file_stem}.job");
-        let command = self
-            .queue_manager
-            .submit_command(remote_dir, &job_script_name);
-
+        let command = self.queue_manager.submit_command(remote_dir, script_name);
         let output = connection.execute(&command)?;
         let remote_id = self.queue_manager.get_id(&output);
 
@@ -230,7 +197,6 @@ mod tests {
             port: 22,
             user: "testuser".to_string(),
             work_directory: PathBuf::from("/remote/work"),
-            prepare_args: vec!["arg1".to_string()],
             queue_manager: QueueManager::Pbs,
             identity_file: None,
         }
