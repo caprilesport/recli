@@ -1,4 +1,14 @@
+use clap::builder::styling::{AnsiColor, Effects};
 use clap::{CommandFactory, Parser, Subcommand};
+
+const STYLES: clap::builder::Styles = clap::builder::Styles::styled()
+    .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .valid(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .invalid(AnsiColor::Yellow.on_default().effects(Effects::BOLD));
 use clap_complete::{Shell, generate};
 use clap_verbosity_flag::LevelFilter;
 
@@ -20,7 +30,7 @@ mod queuemanager;
 mod remote;
 
 #[derive(Parser, Debug)]
-#[command(author, version, long_version = Bosion::LONG_VERSION, about = "A remote job submission and management CLI.")]
+#[command(author, version, long_version = Bosion::LONG_VERSION, styles = STYLES, about = "A remote job submission and management CLI.")]
 #[command(
     long_about = "recli is a tool designed to simplify the process of submitting,
     monitoring, and retrieving files from jobs running on remote high-performance
