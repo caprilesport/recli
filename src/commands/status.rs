@@ -62,7 +62,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
 
     if !args.all {

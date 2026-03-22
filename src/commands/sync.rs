@@ -24,7 +24,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
     if args.sync_all_files {
         ctx.config.ignore.clear();
     }

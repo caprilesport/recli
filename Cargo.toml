@@ -6,7 +6,6 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.69"
 clap = { version = "4.0", features = ["derive"] }
 clap-verbosity-flag = "2.0.0"
 tracing = "0.1.41"
@@ -29,4 +28,8 @@ rpassword = "7.4.0"
 clap_complete = "4.5.64"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
 comfy-table = "7.2.2"
+color-eyre = { version = "0.6.5", features = ["issue-url"] }
+
+[build-dependencies]
+bosion = "2.0.0"
 

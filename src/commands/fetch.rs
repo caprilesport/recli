@@ -18,7 +18,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
     let jobs = Jobs::load_from_db(&ctx.db_path)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
 

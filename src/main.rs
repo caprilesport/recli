@@ -4,6 +4,12 @@ use clap_verbosity_flag::LevelFilter;
 
 use crate::config::Config;
 
+mod build_info {
+    #![allow(clippy::format_push_string)]
+    include!(env!("BOSION_PATH"));
+}
+use build_info::Bosion;
+
 mod commands;
 mod config;
 
@@ -14,10 +20,10 @@ mod queuemanager;
 mod remote;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "A remote job submission and management CLI.")]
+#[command(author, version, long_version = Bosion::LONG_VERSION, about = "A remote job submission and management CLI.")]
 #[command(
-    long_about = "recli is a tool designed to simplify the process of submitting, 
-    monitoring, and retrieving files from jobs running on remote high-performance 
+    long_about = "recli is a tool designed to simplify the process of submitting,
+    monitoring, and retrieving files from jobs running on remote high-performance
     computing (HPC) clusters or servers."
 )]
 #[command(propagate_version = true)]
@@ -52,7 +58,7 @@ struct Context {
 }
 
 impl Context {
-    fn new() -> anyhow::Result<Self> {
+    fn new() -> color_eyre::Result<Self> {
         let config = Config::read()?;
         Ok(Self {
             config,
@@ -61,7 +67,14 @@ impl Context {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> color_eyre::Result<()> {
+    color_eyre::config::HookBuilder::default()
+        .add_issue_metadata("binary", env!("CARGO_BIN_NAME"))
+        .add_issue_metadata("version", Bosion::CRATE_VERSION)
+        .add_issue_metadata("build-date", Bosion::BUILD_DATETIME)
+        .add_issue_metadata("target", env!("TARGET"))
+        .add_issue_metadata("features", Bosion::CRATE_FEATURE_STRING)
+        .install()?;
     let cli = Cli::parse();
 
     let loglevel = match cli.verbosity.log_level_filter() {

@@ -1,5 +1,5 @@
 use crate::jobs::Jobs;
-use anyhow::anyhow;
+
 use comfy_table::presets::NOTHING;
 use comfy_table::{Attribute, Cell, CellAlignment, ContentArrangement, Table};
 use std::io::{IsTerminal, Write};
@@ -14,7 +14,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let jobs = Jobs::load_from_db(&ctx.db_path)?;
     let job = jobs.find_by_prefix(&args.job)?;
 
@@ -40,12 +40,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         writeln!(stdout, "{header}")?;
 
         // Details: right-aligned bold keys, plain values
-        let work_dir = job
-            .work_dir()
-            .to_str()
-            .ok_or_else(|| anyhow!("Job work directory path contains invalid UTF-8 characters."))?;
+        let work_dir = job.work_dir().to_str().ok_or_else(|| {
+            color_eyre::eyre::eyre!("Job work directory path contains invalid UTF-8 characters.")
+        })?;
         let remote_dir = job.remote_dir().to_str().ok_or_else(|| {
-            anyhow!("Job remote directory path contains invalid UTF-8 characters.")
+            color_eyre::eyre::eyre!("Job remote directory path contains invalid UTF-8 characters.")
         })?;
         let submit_time = job
             .submit_time()
@@ -93,13 +92,17 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         table.add_row([
             "work_dir",
             job.work_dir().to_str().ok_or_else(|| {
-                anyhow!("Job work directory path contains invalid UTF-8 characters.")
+                color_eyre::eyre::eyre!(
+                    "Job work directory path contains invalid UTF-8 characters."
+                )
             })?,
         ]);
         table.add_row([
             "remote_dir",
             job.remote_dir().to_str().ok_or_else(|| {
-                anyhow!("Job remote directory path contains invalid UTF-8 characters.")
+                color_eyre::eyre::eyre!(
+                    "Job remote directory path contains invalid UTF-8 characters."
+                )
             })?,
         ]);
         table.add_row(["status", job.status().as_str()]);

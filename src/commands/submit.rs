@@ -17,7 +17,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
+pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let id = uuid::Uuid::new_v4();
     let remote = ctx.config.get_remote(&args.remote)?;
     let file_stem = args
@@ -25,7 +25,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         .file_stem()
         .and_then(std::ffi::OsStr::to_str)
         .ok_or_else(|| {
-            anyhow::anyhow!(
+            color_eyre::eyre::eyre!(
                 "Could not extract a valid UTF-8 file stem from the file {}",
                 args.inpfile.display()
             )
