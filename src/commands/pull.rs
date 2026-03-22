@@ -1,3 +1,4 @@
+use crate::commands::fetch::fetch_statuses;
 use crate::connection::SshConnection;
 use crate::job::Job;
 use crate::jobs::Jobs;
@@ -70,21 +71,10 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
             }
         }
     } else {
-        // Step 1: fetch all statuses sequentially
-        let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
-        for remote in &ctx.config.remotes {
-            match SshConnection::new(remote) {
-                Ok(connection) => match remote.status(&connection) {
-                    Ok(statuses) => {
-                        if let Err(e) = jobs.update(&statuses, remote.name()) {
-                            error!("Failed to update statuses for {}: {}", remote.name(), e);
-                        }
-                    }
-                    Err(e) => error!("Failed to fetch statuses from {}: {}", remote.name(), e),
-                },
-                Err(e) => error!("Failed to connect to {}: {}", remote.name(), e),
-            }
-        }
+        // Step 1: fetch all statuses in parallel
+        let jobs = Jobs::load_from_db(&ctx.db_path)?;
+        let arcmtx = Arc::new(Mutex::new(jobs));
+        fetch_statuses(&ctx.config.remotes, &arcmtx);
 
         // Step 2: download files for all now-finished jobs
         let jobs = Jobs::load_from_db(&ctx.db_path)?;

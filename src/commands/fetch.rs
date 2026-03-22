@@ -5,6 +5,7 @@ use crate::Context;
 use crate::connection::SshConnection;
 use crate::job::Job;
 use crate::jobs::Jobs;
+use crate::remote::Remote;
 
 use tracing::error;
 
@@ -18,55 +19,54 @@ pub struct Args {
     remote: Option<String>,
 }
 
+/// Fetches statuses from a slice of remotes in parallel, updates the shared
+/// job store, and returns the jobs whose status changed.
+pub(crate) fn fetch_statuses(remotes: &[Remote], arcmtx: &Arc<Mutex<Jobs>>) -> Vec<Job> {
+    let changed: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
+
+    remotes.par_iter().for_each(|remote| {
+        let shared_changed = changed.clone();
+        match SshConnection::new(remote) {
+            Ok(conn) => match remote.status(&conn) {
+                Ok(statuses) => {
+                    let mut jobs_guard = arcmtx.lock().unwrap();
+                    match jobs_guard.update(&statuses, remote.name()) {
+                        Ok(updated) => shared_changed.lock().unwrap().extend(updated),
+                        Err(e) => error!(
+                            "Failed to update statuses at {}, caused by {}",
+                            remote.name(),
+                            e
+                        ),
+                    }
+                }
+                Err(e) => error!(
+                    "Failed to fetch statuses at {}, caused by {}",
+                    remote.name(),
+                    e
+                ),
+            },
+            Err(err) => {
+                error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+            }
+        }
+    });
+
+    Arc::try_unwrap(changed).unwrap().into_inner().unwrap()
+}
+
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
     let jobs = Jobs::load_from_db(&ctx.db_path)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
-    let changed: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
 
-    match args.remote {
-        Some(remote_name) => {
-            let remote = &ctx.config.get_remote(&remote_name)?;
-            let connection = SshConnection::new(remote)?;
-            let statuses = remote.status(&connection)?;
-            let updated = arcmtx.lock().unwrap().update(&statuses, remote.name())?;
-            changed.lock().unwrap().extend(updated);
-        }
-        None => {
-            ctx.config.remotes.par_iter().for_each(|remote| {
-                let shared_jobs = arcmtx.clone();
-                let shared_changed = changed.clone();
-                match SshConnection::new(remote) {
-                    Ok(sshconnection) => match remote.status(&sshconnection) {
-                        Ok(statuses) => {
-                            let mut jobs_guard = shared_jobs.lock().unwrap();
-                            match jobs_guard.update(&statuses, remote.name()) {
-                                Ok(updated) => shared_changed.lock().unwrap().extend(updated),
-                                Err(e) => error!(
-                                    "Failed to update statuses at {}, caused by {}",
-                                    remote.name(),
-                                    e
-                                ),
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to fetch statuses at {}, caused by {}",
-                                remote.name(),
-                                e
-                            );
-                        }
-                    },
-                    Err(err) => {
-                        error!("Failed to connect to {}, caused by: {}", remote.name(), err);
-                    }
-                }
-            });
-        }
-    }
+    let remotes: &[Remote] = match &args.remote {
+        Some(name) => std::slice::from_ref(ctx.config.get_remote(name)?),
+        None => &ctx.config.remotes,
+    };
+
+    let changed = fetch_statuses(remotes, &arcmtx);
 
     if ctx.json {
-        let changed = Arc::try_unwrap(changed).unwrap().into_inner().unwrap();
         println!("{}", serde_json::to_string_pretty(&changed)?);
     }
 
