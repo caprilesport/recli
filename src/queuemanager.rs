@@ -102,13 +102,17 @@ impl QueueManager {
             Self::Slurm => {
                 for line in output.lines().skip(2) {
                     let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() < 5 {
+                        continue;
+                    }
                     let job_id = parts[0].to_string();
                     let status = parts[4].to_string();
                     let job_status = match status.as_str() {
                         "PENDING" => JobStatus::Queued,
                         "RUNNING" => JobStatus::Running,
                         "COMPLETED" => JobStatus::Finished,
-                        "CANCELLED" | "CANCELLED+" => JobStatus::Error,
+                        "FAILED" | "CANCELLED" | "CANCELLED+" | "NODE_FAIL" | "TIMEOUT"
+                        | "OUT_OF_MEMORY" => JobStatus::Error,
                         _ => JobStatus::Undefined,
                     };
                     statuses.insert(job_id, job_status);
@@ -188,14 +192,23 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12345.server    testuser  small   ts-produc* 13716*   1   8   11gb 10000 Q 2345:
 12346.server    testuser  big     solvation* 33526*   1  16   28gb 10000 R 104:4
 12347.server    testuser  big     init.job   24242*   1  16   30gb 10000 F 497:3
+12348.server    testuser  big     error.job  11111*   1  16   30gb 10000 E 001:0
+12349.server    testuser  big     weird.job  22222*   1  16   30gb 10000 X 000:0
 "#;
         let statuses = QueueManager::Pbs.status(&pbs_output);
         let mut expected = HashMap::new();
         expected.insert("12345.server".to_string(), JobStatus::Queued);
         expected.insert("12346.server".to_string(), JobStatus::Running);
         expected.insert("12347.server".to_string(), JobStatus::Finished);
+        expected.insert("12348.server".to_string(), JobStatus::Error);
+        expected.insert("12349.server".to_string(), JobStatus::Undefined);
 
         assert_eq!(statuses, expected);
+    }
+
+    #[test]
+    fn test_pbs_status_parsing_empty() {
+        assert!(QueueManager::Pbs.status("").is_empty());
     }
 
     #[test]
@@ -213,6 +226,88 @@ Group "default" (1 parallel): running
         expected.insert("0".to_string(), JobStatus::Running);
 
         assert_eq!(statuses, expected);
+    }
+
+    #[test]
+    fn test_pueue_status_parsing_multiple() {
+        // Covers all status variants including commands with spaces in the path.
+        let pueue_output = r#"
+Group "default" (4 parallel): running
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Id   Status    Command                                          Path                                                                     Start      End
+═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+ 0    Running   /home/user/scripts/job -v 5 init.inp             /remote/work/uuid-a                                                      12:47:13
+ 1    Queued    /home/user/scripts/job -v 5 other.inp            /remote/work/uuid-b
+ 2    Success   /home/user/scripts/job -v 5 done.inp             /remote/work/uuid-c                                                      11:00:00   11:05:00
+ 3    Failed    /home/user/scripts/job -v 5 fail.inp             /remote/work/uuid-d                                                      10:00:00   10:01:00
+ 4    Killed    /home/user/scripts/job -v 5 kill.inp             /remote/work/uuid-e                                                      09:00:00   09:00:30
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+"#;
+        let statuses = QueueManager::Pueue.status(&pueue_output);
+        let mut expected = HashMap::new();
+        expected.insert("0".to_string(), JobStatus::Running);
+        expected.insert("1".to_string(), JobStatus::Queued);
+        expected.insert("2".to_string(), JobStatus::Finished);
+        expected.insert("3".to_string(), JobStatus::Error);
+        expected.insert("4".to_string(), JobStatus::Finished);
+
+        assert_eq!(statuses, expected);
+    }
+
+    #[test]
+    fn test_pueue_status_parsing_empty() {
+        assert!(QueueManager::Pueue.status("").is_empty());
+    }
+
+    #[test]
+    fn test_slurm_status_parsing() {
+        // NOTE: the current parser assumes State is at whitespace-split column 4
+        // (format: JobID JobName Partition Account State).
+        let slurm_output = r#"       JobID    JobName  Partition    Account      State
+------------ ---------- ---------- ---------- ----------
+       12345      myjob    compute     grpname  COMPLETED
+       12346  otherjob     compute     grpname    RUNNING
+       12347  failedjob    compute     grpname     FAILED
+       12348  queuedjob    compute     grpname    PENDING
+       12349  canceljob    compute     grpname  CANCELLED
+       12350  nodefail     compute     grpname  NODE_FAIL
+       12351  unknownjob   compute     grpname   WHATEVER
+"#;
+        let statuses = QueueManager::Slurm.status(&slurm_output);
+        let mut expected = HashMap::new();
+        expected.insert("12345".to_string(), JobStatus::Finished);
+        expected.insert("12346".to_string(), JobStatus::Running);
+        expected.insert("12347".to_string(), JobStatus::Error);
+        expected.insert("12348".to_string(), JobStatus::Queued);
+        expected.insert("12349".to_string(), JobStatus::Error);
+        expected.insert("12350".to_string(), JobStatus::Error);
+        expected.insert("12351".to_string(), JobStatus::Undefined);
+
+        assert_eq!(statuses, expected);
+    }
+
+    #[test]
+    fn test_slurm_status_parsing_empty() {
+        assert!(QueueManager::Slurm.status("").is_empty());
+    }
+
+    #[test]
+    fn test_submit_command_special_chars() {
+        // Paths with spaces and single quotes must be safely shell-quoted.
+        let dir_with_spaces = Path::new("/remote/my jobs/uuid-1");
+        let script_with_quote = "it's a job.pbs";
+        assert_eq!(
+            QueueManager::Pbs.submit_command(dir_with_spaces, script_with_quote),
+            "cd '/remote/my jobs/uuid-1' && qsub 'it'\\''s a job.pbs'"
+        );
+        assert_eq!(
+            QueueManager::Slurm.submit_command(dir_with_spaces, script_with_quote),
+            "cd '/remote/my jobs/uuid-1' && sbatch 'it'\\''s a job.pbs'"
+        );
+        assert_eq!(
+            QueueManager::Pueue.submit_command(dir_with_spaces, script_with_quote),
+            "pueue add --working-directory '/remote/my jobs/uuid-1' -- ./'it'\\''s a job.pbs'"
+        );
     }
 
     #[test]
