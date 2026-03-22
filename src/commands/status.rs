@@ -13,6 +13,7 @@ use crate::job::{Job, JobStatus};
 /// Shows a table of all tracked jobs. You can use the flags below to filter
 /// the jobs that are displayed.
 #[derive(Debug, clap::Args, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Show all jobs
     #[arg(long, short, action)]
@@ -42,7 +43,7 @@ pub struct Args {
     #[arg(long, short)]
     pub remote: Option<String>,
 
-    /// Filter by remote_id
+    /// Filter by `remote_id`
     #[arg(long)]
     pub remote_id: Option<String>,
 
@@ -59,13 +60,14 @@ pub struct Args {
     pub not_synced: bool,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     if !args.all {
         let two_days_ago = Utc::now() - Duration::hours(48);
         jobs.retain(|j| {
-            !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| st > two_days_ago))
+            !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| *st > two_days_ago))
         });
     }
 
@@ -113,16 +115,17 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         table
             .with(tabled::settings::Style::rounded())
             .with(tabled::settings::Alignment::center());
-        writeln!(stdout, "{}", table)?;
+        writeln!(stdout, "{table}")?;
     } else {
         let mut table = create_status_table(jobs, args.show_id, false);
         table.with(tabled::settings::Style::empty());
-        writeln!(stdout, "{}", table)?;
+        writeln!(stdout, "{table}")?;
     }
 
     Ok(())
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tabled::Table {
     let mut builder = Builder::default();
 
@@ -143,7 +146,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
         builder.push_record(headers);
     }
 
-    jobs.iter().for_each(|j| {
+    for j in &jobs {
         let j_uuid = j.uuid().to_string();
         let id = j.short_id();
         let work_dir = j.work_dir().to_string_lossy().to_string();
@@ -173,7 +176,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
             row.push(&j_uuid);
         }
         builder.push_record(row);
-    });
+    }
 
     builder.build()
 }

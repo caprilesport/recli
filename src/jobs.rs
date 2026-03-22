@@ -34,7 +34,7 @@ impl Jobs {
     /// This method serializes the entire job collection to JSON format and writes it to the given file path. If the file already exists, it will be overwritten.
     ///
     /// # Errors
-    /// - If file serialization fails will throw a serde_json::Error
+    /// - If file serialization fails will throw a `serde_json::Error`
     /// - File creation may fail in some platforms if the directory does not exist
     ///
     /// # Examples
@@ -54,7 +54,7 @@ impl Jobs {
     /// If the file doesn't exist or is empty, returns an empty job collection.
     ///
     /// # Errors
-    /// - If file deserialization fails will throw a serde_json::Error
+    /// - If file deserialization fails will throw a `serde_json::Error`
     ///
     /// The above is mainly due to a malformed JSON file, which may happen if the user manually edits the file for some reason.
     ///
@@ -90,7 +90,7 @@ impl Jobs {
     /// status_map.insert("job123".to_string(), JobStatus::Finished);
     /// jobs.update(status_map, "remote-cluster");
     /// ```
-    pub fn update(&mut self, statuses: HashMap<String, JobStatus>, remotename: &str) {
+    pub fn update(&mut self, statuses: &HashMap<String, JobStatus>, remotename: &str) {
         let mut changed_jobs = Vec::new();
 
         // we filter by non-synced jobs just to be sure that we don't have ID collision
@@ -183,7 +183,11 @@ impl Jobs {
             1 => Ok(matches[0]),
             _ => Err(Error::AmbiguousPrefix {
                 prefix: prefix.to_string(),
-                matches: matches.iter().map(|j| j.short_id()).collect::<Vec<_>>().join(", "),
+                matches: matches
+                    .iter()
+                    .map(|j| j.short_id())
+                    .collect::<Vec<_>>()
+                    .join(", "),
             }),
         }
     }
@@ -212,7 +216,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.uuid())
+                    .push(*job.uuid());
             });
 
         self.query()
@@ -223,7 +227,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.uuid())
+                    .push(*job.uuid());
             });
 
         self.query()
@@ -234,7 +238,7 @@ impl Jobs {
                 jobs_by_remote
                     .entry(job.remote().to_string())
                     .or_default()
-                    .push(*job.uuid())
+                    .push(*job.uuid());
             });
 
         jobs_by_remote
@@ -389,7 +393,7 @@ impl<'a> JobQuery<'a> {
                 directory.is_none_or(|d| job.work_dir().to_str().is_some_and(|s| s.contains(d)));
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
-                sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
+                sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| *st > t));
 
             prefix_match
                 && uuid_match

@@ -184,8 +184,8 @@ impl SshConnection {
 
     fn try_default_pubkey_auth(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
         debug!("Attempting default public key authentication...");
-        let home = dirs::home_dir()
-            .ok_or_else(|| std::io::Error::other("Home directory not found"))?;
+        let home =
+            dirs::home_dir().ok_or_else(|| std::io::Error::other("Home directory not found"))?;
 
         let key_files = ["id_ed25519", "id_rsa"];
 
@@ -203,7 +203,7 @@ impl SshConnection {
 
     fn try_password_auth(sess: &mut ssh2::Session, username: &str) -> Result<(), Error> {
         debug!("Falling back to password authentication.");
-        print!("Password for {}: ", username);
+        print!("Password for {username}: ");
         std::io::stdout().flush()?;
 
         let password = rpassword::read_password()?;

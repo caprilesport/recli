@@ -16,6 +16,7 @@ pub struct Args {
     remote: String,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let id = uuid::Uuid::new_v4();
     let remote = ctx.config.get_remote(&args.remote)?;
@@ -25,8 +26,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         .and_then(std::ffi::OsStr::to_str)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Could not extract a valid UTF-8 file stem from the file {:?}",
-                args.inpfile
+                "Could not extract a valid UTF-8 file stem from the file {}",
+                args.inpfile.display()
             )
         })?;
 
@@ -50,7 +51,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         file_stem.to_owned(),
         remote_dir,
         work_dir,
-    )?;
+    );
 
     info!(
         "Job {} ({}) with remote id: {} submitted successfully",

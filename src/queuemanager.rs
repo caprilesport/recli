@@ -30,17 +30,17 @@ impl QueueManager {
     /// let job_id = manager.get_id(output);
     /// assert_eq!(job_id, "12345");
     /// ```
-    pub fn get_id(&self, output: String) -> String {
+    pub fn get_id(&self, output: &str) -> String {
         match self {
             Self::Pbs => output.trim().to_string(),
             Self::Pueue => RE_PUEUE_ID
-                .captures(&output)
+                .captures(output)
                 .and_then(|caps| caps.get(1))
-                .map_or_else(|| "".to_string(), |m| m.as_str().to_string()),
+                .map_or_else(String::new, |m| m.as_str().to_string()),
             Self::Slurm => RE_SLURM_ID
-                .captures(&output)
+                .captures(output)
                 .and_then(|caps| caps.get(1))
-                .map_or_else(|| "".to_string(), |m| m.as_str().to_string()),
+                .map_or_else(String::new, |m| m.as_str().to_string()),
         }
     }
 
@@ -57,7 +57,7 @@ impl QueueManager {
     /// let output = "12345.username queue jobname user time status".to_string();
     /// let statuses = manager.status(output);
     /// ```
-    pub fn status(&self, output: String) -> HashMap<String, JobStatus> {
+    pub fn status(&self, output: &str) -> HashMap<String, JobStatus> {
         let mut statuses = HashMap::new();
 
         match self {
@@ -129,7 +129,7 @@ impl QueueManager {
     /// * `user` - The username to filter jobs by (not all queue managers support this)
     pub fn status_command(&self, user: &str) -> String {
         match self {
-            Self::Pbs => format!("qstat -u {} -x", user),
+            Self::Pbs => format!("qstat -u {user} -x"),
             Self::Pueue => "pueue status".to_string(),
             //TODO: check this starttime
             Self::Slurm => "sacct -X --starttime 1970-01-01".to_string(),
@@ -169,13 +169,13 @@ mod tests {
     #[test]
     fn test_get_id() {
         let pbs_output = "12345.server".to_string();
-        assert_eq!(QueueManager::Pbs.get_id(pbs_output), "12345.server");
+        assert_eq!(QueueManager::Pbs.get_id(&pbs_output), "12345.server");
 
         let pueue_output = "New task added (id 2).".to_string();
-        assert_eq!(QueueManager::Pueue.get_id(pueue_output), "2");
+        assert_eq!(QueueManager::Pueue.get_id(&pueue_output), "2");
 
         let slurm_output = "Submitted batch job 67890".to_string();
-        assert_eq!(QueueManager::Slurm.get_id(slurm_output), "67890");
+        assert_eq!(QueueManager::Slurm.get_id(&slurm_output), "67890");
     }
 
     #[test]
@@ -189,7 +189,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12346.server    testuser  big     solvation* 33526*   1  16   28gb 10000 R 104:4
 12347.server    testuser  big     init.job   24242*   1  16   30gb 10000 F 497:3
 "#;
-        let statuses = QueueManager::Pbs.status(pbs_output.to_string());
+        let statuses = QueueManager::Pbs.status(&pbs_output);
         let mut expected = HashMap::new();
         expected.insert("12345.server".to_string(), JobStatus::Queued);
         expected.insert("12346.server".to_string(), JobStatus::Running);
@@ -208,7 +208,7 @@ Group "default" (1 parallel): running
  0    Running   /home/vport/projects/scripts/job -v 5 init.inp   /home/vport/projects/calculations/9d90ca4e-72bb-4974-8c23-6a182791e216   12:47:13
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 "#;
-        let statuses = QueueManager::Pueue.status(pueue_output.to_string());
+        let statuses = QueueManager::Pueue.status(&pueue_output);
         let mut expected = HashMap::new();
         expected.insert("0".to_string(), JobStatus::Running);
 

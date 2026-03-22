@@ -44,8 +44,8 @@ impl Job {
         filename: String,
         remote_dir: PathBuf,
         work_dir: PathBuf,
-    ) -> Result<Self, Error> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             uuid,
             remote,
             remote_id,
@@ -55,7 +55,7 @@ impl Job {
             status: JobStatus::Queued,
             submit_time: Utc::now(),
             sync_time: None,
-        })
+        }
     }
 
     pub fn uuid(&self) -> &Uuid {
@@ -98,8 +98,8 @@ impl Job {
         &self.filename
     }
 
-    pub fn sync_time(&self) -> &Option<DateTime<Utc>> {
-        &self.sync_time
+    pub fn sync_time(&self) -> Option<&DateTime<Utc>> {
+        self.sync_time.as_ref()
     }
 
     pub fn set_status(&mut self, status: JobStatus) {
@@ -111,7 +111,7 @@ impl Job {
     }
 }
 
-/// Abstraction on status for all the supported QueueManagers.
+/// Abstraction on status for all the supported `QueueManagers`.
 ///
 /// Relevant documentation can be found here:
 /// [Slurm](https://slurm.schedmd.com/job_state_codes.html)
@@ -131,8 +131,8 @@ pub enum JobStatus {
 }
 
 impl JobStatus {
-    pub fn as_str(&self) -> &'static str {
-        match &self {
+    pub fn as_str(self) -> &'static str {
+        match self {
             Self::Queued => "Q",
             Self::Finished => "F",
             Self::Error => "E",

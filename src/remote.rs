@@ -127,13 +127,13 @@ impl Remote {
 
         connection.upload_files(&files_to_send, remote_dir, ignore)?;
 
-        let job_script_name = format!("{}.job", file_stem);
+        let job_script_name = format!("{file_stem}.job");
         let command = self
             .queue_manager
             .submit_command(remote_dir, &job_script_name);
 
         let output = connection.execute(&command)?;
-        let remote_id = self.queue_manager.get_id(output);
+        let remote_id = self.queue_manager.get_id(&output);
 
         Ok(remote_id)
     }
@@ -152,7 +152,7 @@ impl Remote {
     ) -> Result<HashMap<String, JobStatus>, Error> {
         let command = self.queue_manager.status_command(self.user());
         let output = connection.execute(&command)?;
-        Ok(self.queue_manager.status(output))
+        Ok(self.queue_manager.status(&output))
     }
 }
 

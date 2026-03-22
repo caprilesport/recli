@@ -96,7 +96,7 @@ fn main() -> anyhow::Result<()> {
             let args = commands::status::Args::default();
             commands::status::execute(args, ctx)?;
         }
-    };
+    }
 
     Ok(())
 }
