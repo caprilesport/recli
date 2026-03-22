@@ -1,9 +1,9 @@
 pub mod cancel;
 pub mod fetch;
 pub mod info;
+pub mod pull;
 pub mod status;
 pub mod submit;
-pub mod sync;
 
 use crate::job::JobStatus;
 use comfy_table::{Attribute, Cell, Color};
