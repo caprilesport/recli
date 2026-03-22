@@ -164,20 +164,23 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
+    fn make_job(status: JobStatus, sync_time: Option<DateTime<Utc>>) -> Job {
+        Job {
+            uuid: Uuid::new_v4(),
+            filename: "myjob".to_string(),
+            remote: "babel".to_string(),
+            remote_id: "12345.server".to_string(),
+            remote_dir: PathBuf::from("/scratch/work/uuid"),
+            work_dir: PathBuf::from("/home/user/jobs"),
+            status,
+            submit_time: Utc::now(),
+            sync_time,
+        }
+    }
+
     #[test]
     fn test_job_serialization_deserialization() {
-        let job_id = Uuid::new_v4();
-        let job = Job {
-            uuid: job_id,
-            filename: "test-file".to_string(),
-            remote: "test_remote".to_string(),
-            remote_id: "12345".to_string(),
-            remote_dir: PathBuf::from("/scratch/tmp"),
-            work_dir: PathBuf::from("/tmp"),
-            status: JobStatus::Running,
-            submit_time: Utc::now(),
-            sync_time: None,
-        };
+        let job = make_job(JobStatus::Running, None);
 
         let serialized = serde_json::to_string(&job).unwrap();
         let deserialized: Job = serde_json::from_str(&serialized).unwrap();
@@ -185,5 +188,57 @@ mod tests {
         assert_eq!(job.short_id(), deserialized.short_id());
         assert_eq!(job.remote(), deserialized.remote());
         assert_eq!(job.status(), deserialized.status());
+    }
+
+    #[test]
+    fn test_short_id_is_7_chars() {
+        let job = make_job(JobStatus::Queued, None);
+        assert_eq!(job.short_id().len(), 7);
+    }
+
+    #[test]
+    fn test_short_id_is_uuid_prefix() {
+        let job = make_job(JobStatus::Queued, None);
+        assert!(job.uuid().to_string().starts_with(&job.short_id()));
+    }
+
+    #[test]
+    fn test_synced_without_sync_time() {
+        let job = make_job(JobStatus::Finished, None);
+        assert!(!job.synced());
+        assert!(job.sync_time().is_none());
+    }
+
+    #[test]
+    fn test_synced_with_sync_time() {
+        let job = make_job(JobStatus::Finished, Some(Utc::now()));
+        assert!(job.synced());
+        assert!(job.sync_time().is_some());
+    }
+
+    #[test]
+    fn test_from_parts_roundtrip() {
+        let uuid = Uuid::new_v4();
+        let submit_time = Utc::now();
+        let sync_time = Some(Utc::now());
+
+        let job = Job::from_parts(
+            uuid,
+            "babel".to_string(),
+            "99.server".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("/home/user/jobs"),
+            PathBuf::from("/scratch/work/uuid"),
+            JobStatus::Finished,
+            submit_time,
+            sync_time,
+        );
+
+        assert_eq!(job.uuid(), &uuid);
+        assert_eq!(job.remote(), "babel");
+        assert_eq!(job.remote_id(), "99.server");
+        assert_eq!(job.filename(), "myjob");
+        assert_eq!(job.status(), &JobStatus::Finished);
+        assert!(job.synced());
     }
 }

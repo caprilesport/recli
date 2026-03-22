@@ -200,31 +200,56 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_submit() {
-    //     let remote = create_test_remote();
-    //     let connection = MockConnection::new();
-    //     let job_id = Uuid::new_v4();
-    //     let inp_file = Path::new("test.inp");
+    #[test]
+    fn test_submit() {
+        let remote = create_test_remote();
+        let connection = MockConnection::new();
+        let script = Path::new("/home/user/jobs/myjob.pbs");
+        let remote_dir = Path::new("/remote/work/uuid-1");
 
-    //     // Create a dummy file to be found by the submit function
-    //     let _dummy_file = std::fs::File::create(format!(
-    //         "{}.job",
-    //         inp_file.file_stem().unwrap().to_str().unwrap()
-    //     ))
-    //     .unwrap();
+        connection.mock_output.borrow_mut().insert(
+            "cd '/remote/work/uuid-1' && qsub 'myjob.pbs'".to_string(),
+            "12345.server\n".to_string(),
+        );
 
-    //     connection.mock_output.borrow_mut().insert(
-    //         format!("cd /remote/work/{} && qsub test.job ", job_id),
-    //         "12345.server".to_string(),
-    //     );
+        let remote_id = remote.submit(script, &[], &connection, remote_dir).unwrap();
 
-    //     let job = remote.submit(job_id, inp_file, &connection).unwrap();
+        assert_eq!(remote_id, "12345.server");
+        // mkdir, upload, execute — in that order
+        assert_eq!(connection.commands.borrow().len(), 1);
+        assert_eq!(connection.uploads.borrow().len(), 1);
+        let (uploaded_files, uploaded_to) = connection.uploads.borrow()[0].clone();
+        assert_eq!(uploaded_files, vec![script.to_path_buf()]);
+        assert_eq!(uploaded_to, remote_dir);
+    }
 
-    //     assert_eq!(job.remote_id(), "12345.server");
-    //     assert_eq!(connection.commands.borrow().len(), 1);
-    //     assert_eq!(connection.uploads.borrow().len(), 1);
-    // }
+    #[test]
+    fn test_submit_with_extra_files() {
+        let remote = create_test_remote();
+        let connection = MockConnection::new();
+        let script = Path::new("/home/user/jobs/myjob.pbs");
+        let extra = vec![
+            PathBuf::from("/home/user/jobs/myjob.inp"),
+            PathBuf::from("/home/user/jobs/myjob.xyz"),
+        ];
+        let remote_dir = Path::new("/remote/work/uuid-2");
+
+        connection.mock_output.borrow_mut().insert(
+            "cd '/remote/work/uuid-2' && qsub 'myjob.pbs'".to_string(),
+            "99.server\n".to_string(),
+        );
+
+        let remote_id = remote
+            .submit(script, &extra, &connection, remote_dir)
+            .unwrap();
+
+        assert_eq!(remote_id, "99.server");
+        let (uploaded_files, _) = connection.uploads.borrow()[0].clone();
+        assert_eq!(uploaded_files.len(), 3); // script + 2 extra
+        assert_eq!(uploaded_files[0], script);
+        assert_eq!(uploaded_files[1], extra[0]);
+        assert_eq!(uploaded_files[2], extra[1]);
+    }
 
     #[test]
     fn test_status() {
@@ -249,26 +274,4 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
         assert_eq!(statuses.get("12345.server"), Some(&JobStatus::Queued));
         assert_eq!(connection.commands.borrow().len(), 1);
     }
-
-    // #[test]
-    // fn test_sync() {
-    //     let remote = create_test_remote();
-    //     let connection = MockConnection::new();
-    //     let job_id = Uuid::new_v4();
-    //     let job = Job::new(
-    //         job_id,
-    //         "test_remote".to_string(),
-    //         "12345".to_string(),
-    //         "test_job".to_string(),
-    //     )
-    //     .unwrap();
-
-    //     remote.sync(&job, &connection).unwrap();
-
-    //     assert_eq!(connection.downloads.borrow().len(), 1);
-    //     let (remote_dir, local_dir, basename) = connection.downloads.borrow()[0].clone();
-    //     assert_eq!(remote_dir, remote.work_dir().join(job.id().to_string()));
-    //     assert_eq!(local_dir, *job.working_dir());
-    //     assert_eq!(basename, job.basename());
-    // }
 }

@@ -341,6 +341,232 @@ impl Jobs {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::job::Job;
+
+    fn make_job(remote: &str, remote_id: &str, status: JobStatus) -> Job {
+        Job::from_parts(
+            Uuid::new_v4(),
+            remote.to_string(),
+            remote_id.to_string(),
+            "myjob".to_string(),
+            PathBuf::from("/home/user/jobs"),
+            PathBuf::from("/remote/work/uuid"),
+            status,
+            Utc::now(),
+            None,
+        )
+    }
+
+    fn temp_db() -> (tempfile::NamedTempFile, PathBuf) {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+        (f, path)
+    }
+
+    #[test]
+    fn test_insert_and_load() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "12345.server", JobStatus::Running);
+
+        Jobs::insert_job(&path, &job).unwrap();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+
+        assert_eq!(jobs.len(), 1);
+        let loaded = &jobs[0];
+        assert_eq!(loaded.uuid(), job.uuid());
+        assert_eq!(loaded.remote(), job.remote());
+        assert_eq!(loaded.remote_id(), job.remote_id());
+        assert_eq!(loaded.filename(), job.filename());
+        assert_eq!(loaded.status(), job.status());
+        assert_eq!(loaded.work_dir(), job.work_dir());
+        assert_eq!(loaded.remote_dir(), job.remote_dir());
+        assert!(loaded.sync_time().is_none());
+    }
+
+    #[test]
+    fn test_update_status() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "12345.server", JobStatus::Queued);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let mut jobs = Jobs::load_from_db(&path).unwrap();
+        let mut statuses = HashMap::new();
+        statuses.insert("12345.server".to_string(), JobStatus::Running);
+        jobs.update(&statuses, "babel").unwrap();
+
+        assert_eq!(jobs[0].status(), &JobStatus::Running);
+
+        let reloaded = Jobs::load_from_db(&path).unwrap();
+        assert_eq!(reloaded[0].status(), &JobStatus::Running);
+    }
+
+    #[test]
+    fn test_update_ignores_other_remotes() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("cluster-b", "99", JobStatus::Queued);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let mut jobs = Jobs::load_from_db(&path).unwrap();
+        let mut statuses = HashMap::new();
+        statuses.insert("99".to_string(), JobStatus::Running);
+        jobs.update(&statuses, "cluster-a").unwrap();
+
+        assert_eq!(jobs[0].status(), &JobStatus::Queued);
+    }
+
+    #[test]
+    fn test_update_sync_time() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "12345.server", JobStatus::Finished);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        jobs.update_sync_time(job.uuid(), Utc::now()).unwrap();
+
+        let reloaded = Jobs::load_from_db(&path).unwrap();
+        assert!(reloaded[0].synced());
+    }
+
+    #[test]
+    fn test_find_by_prefix() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "1", JobStatus::Queued);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let prefix = &job.uuid().to_string()[..7];
+        let found = jobs.find_by_prefix(prefix).unwrap();
+        assert_eq!(found.uuid(), job.uuid());
+    }
+
+    #[test]
+    fn test_find_by_prefix_not_found() {
+        let (_tmp, path) = temp_db();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let err = jobs.find_by_prefix("nonexistent").unwrap_err();
+        assert!(matches!(err, crate::job::Error::JobNotFound(_)));
+    }
+
+    #[test]
+    fn test_find_by_prefix_ambiguous() {
+        let (_tmp, path) = temp_db();
+        // Two UUIDs that share the same first 7 chars.
+        let uuid1 = "aaaaaaaa-0000-0000-0000-000000000001"
+            .parse::<Uuid>()
+            .unwrap();
+        let uuid2 = "aaaaaaaa-0000-0000-0000-000000000002"
+            .parse::<Uuid>()
+            .unwrap();
+        let job1 = Job::from_parts(
+            uuid1,
+            "babel".to_string(),
+            "1".to_string(),
+            "job1".to_string(),
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote"),
+            JobStatus::Queued,
+            Utc::now(),
+            None,
+        );
+        let job2 = Job::from_parts(
+            uuid2,
+            "babel".to_string(),
+            "2".to_string(),
+            "job2".to_string(),
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote"),
+            JobStatus::Queued,
+            Utc::now(),
+            None,
+        );
+        Jobs::insert_job(&path, &job1).unwrap();
+        Jobs::insert_job(&path, &job2).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let err = jobs.find_by_prefix("aaaaaaa").unwrap_err();
+        assert!(matches!(err, crate::job::Error::AmbiguousPrefix { .. }));
+    }
+
+    #[test]
+    fn test_query_by_status() {
+        let (_tmp, path) = temp_db();
+        Jobs::insert_job(&path, &make_job("babel", "1", JobStatus::Running)).unwrap();
+        Jobs::insert_job(&path, &make_job("babel", "2", JobStatus::Finished)).unwrap();
+        Jobs::insert_job(&path, &make_job("babel", "3", JobStatus::Queued)).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let running: Vec<_> = jobs
+            .query()
+            .with_status(&JobStatus::Running)
+            .iter()
+            .collect();
+        assert_eq!(running.len(), 1);
+        assert_eq!(running[0].remote_id(), "1");
+    }
+
+    #[test]
+    fn test_query_by_remote() {
+        let (_tmp, path) = temp_db();
+        Jobs::insert_job(&path, &make_job("babel", "1", JobStatus::Running)).unwrap();
+        Jobs::insert_job(&path, &make_job("cluster-b", "2", JobStatus::Running)).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let babel: Vec<_> = jobs.query().with_remote("babel").iter().collect();
+        assert_eq!(babel.len(), 1);
+        assert_eq!(babel[0].remote_id(), "1");
+    }
+
+    #[test]
+    fn test_query_synced_filter() {
+        let (_tmp, path) = temp_db();
+        Jobs::insert_job(&path, &make_job("babel", "1", JobStatus::Finished)).unwrap();
+        let synced_job = Job::from_parts(
+            Uuid::new_v4(),
+            "babel".to_string(),
+            "2".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote"),
+            JobStatus::Finished,
+            Utc::now(),
+            Some(Utc::now()),
+        );
+        Jobs::insert_job(&path, &synced_job).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        assert_eq!(jobs.query().synced(false).iter().count(), 1);
+        assert_eq!(jobs.query().synced(true).iter().count(), 1);
+    }
+
+    #[test]
+    fn test_syncable() {
+        let (_tmp, path) = temp_db();
+        Jobs::insert_job(&path, &make_job("babel", "1", JobStatus::Queued)).unwrap();
+        Jobs::insert_job(&path, &make_job("babel", "2", JobStatus::Running)).unwrap();
+        Jobs::insert_job(&path, &make_job("babel", "3", JobStatus::Finished)).unwrap();
+        Jobs::insert_job(&path, &make_job("babel", "4", JobStatus::Error)).unwrap();
+        let already_synced = Job::from_parts(
+            Uuid::new_v4(),
+            "babel".to_string(),
+            "5".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote"),
+            JobStatus::Finished,
+            Utc::now(),
+            Some(Utc::now()),
+        );
+        Jobs::insert_job(&path, &already_synced).unwrap();
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        let syncable = jobs.syncable();
+        assert_eq!(syncable.get("babel").unwrap().len(), 2); // Finished + Error, not yet synced
+    }
+}
+
 /// A query builder for filtering and searching jobs.
 ///
 /// `JobQuery` provides a builder interface for constructing complex queries against a job
