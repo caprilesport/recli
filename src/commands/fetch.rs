@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::Context;
 use crate::connection::SshConnection;
+use crate::job::Job;
 use crate::jobs::Jobs;
 
 use tracing::error;
@@ -21,27 +22,31 @@ pub struct Args {
 pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
     let jobs = Jobs::load_from_db(&ctx.db_path)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
+    let changed: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
 
     match args.remote {
         Some(remote_name) => {
             let remote = &ctx.config.get_remote(&remote_name)?;
             let connection = SshConnection::new(remote)?;
             let statuses = remote.status(&connection)?;
-            arcmtx.lock().unwrap().update(&statuses, remote.name())?;
+            let updated = arcmtx.lock().unwrap().update(&statuses, remote.name())?;
+            changed.lock().unwrap().extend(updated);
         }
         None => {
             ctx.config.remotes.par_iter().for_each(|remote| {
                 let shared_jobs = arcmtx.clone();
+                let shared_changed = changed.clone();
                 match SshConnection::new(remote) {
                     Ok(sshconnection) => match remote.status(&sshconnection) {
                         Ok(statuses) => {
                             let mut jobs_guard = shared_jobs.lock().unwrap();
-                            if let Err(e) = jobs_guard.update(&statuses, remote.name()) {
-                                error!(
+                            match jobs_guard.update(&statuses, remote.name()) {
+                                Ok(updated) => shared_changed.lock().unwrap().extend(updated),
+                                Err(e) => error!(
                                     "Failed to update statuses at {}, caused by {}",
                                     remote.name(),
                                     e
-                                );
+                                ),
                             }
                         }
                         Err(e) => {
@@ -58,6 +63,11 @@ pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
                 }
             });
         }
+    }
+
+    if ctx.json {
+        let changed = Arc::try_unwrap(changed).unwrap().into_inner().unwrap();
+        println!("{}", serde_json::to_string_pretty(&changed)?);
     }
 
     Ok(())

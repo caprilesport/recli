@@ -43,6 +43,9 @@ struct Cli {
     /// Verbosity options.
     #[command(flatten)]
     verbosity: clap_verbosity_flag::Verbosity<clap_verbosity_flag::InfoLevel>,
+    /// Output as JSON
+    #[arg(long, global = true, action)]
+    json: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -67,14 +70,16 @@ enum Mode {
 struct Context {
     config: crate::Config,
     db_path: std::path::PathBuf,
+    json: bool,
 }
 
 impl Context {
-    fn new() -> color_eyre::Result<Self> {
+    fn new(json: bool) -> color_eyre::Result<Self> {
         let config = Config::read()?;
         Ok(Self {
             config,
             db_path: Config::get_dir()?.join("jobs.db"),
+            json,
         })
     }
 }
@@ -108,7 +113,7 @@ fn main() -> color_eyre::Result<()> {
         return Ok(());
     }
 
-    let ctx = Context::new()?;
+    let ctx = Context::new(cli.json)?;
 
     match cli.mode {
         Some(Mode::Completions { shell: _ }) => unreachable!(),

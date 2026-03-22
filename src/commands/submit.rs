@@ -120,14 +120,18 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             work_dir,
         );
 
-        info!(
-            "Job {} ({}) with remote id: {} submitted successfully",
-            job.filename(),
-            job.short_id(),
-            job.remote_id()
-        );
-
         Jobs::insert_job(&ctx.db_path, &job)?;
+
+        if ctx.json {
+            println!("{}", serde_json::to_string_pretty(&job)?);
+        } else {
+            info!(
+                "Job {} ({}) with remote id: {} submitted successfully",
+                job.filename(),
+                job.short_id(),
+                job.remote_id()
+            );
+        }
     }
 
     Ok(())

@@ -237,7 +237,7 @@ impl Jobs {
         &mut self,
         statuses: &HashMap<String, JobStatus>,
         remotename: &str,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<Job>, Error> {
         let mut changed_jobs = Vec::new();
 
         for job in self
@@ -270,7 +270,7 @@ impl Jobs {
             }
         }
 
-        Ok(())
+        Ok(changed_jobs)
     }
 
     /// Synchronizes a specific job with its remote counterpart.

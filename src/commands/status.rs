@@ -109,6 +109,12 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     }
 
     let jobs: Vec<&Job> = query.iter().collect();
+
+    if ctx.json {
+        println!("{}", serde_json::to_string_pretty(&jobs)?);
+        return Ok(());
+    }
+
     let mut stdout = std::io::stdout().lock();
     let is_tty = stdout.is_terminal();
     let table = create_status_table(jobs, args.show_id, is_tty);

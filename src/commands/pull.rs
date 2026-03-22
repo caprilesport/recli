@@ -1,4 +1,5 @@
 use crate::connection::SshConnection;
+use crate::job::Job;
 use crate::jobs::Jobs;
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -57,6 +58,11 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
         match Jobs::sync_job(job, &connection, &ctx.config.ignore) {
             Ok(sync_time) => {
                 jobs.update_sync_time(&job_uuid, sync_time)?;
+                if ctx.json {
+                    let jobs = Jobs::load_from_db(&ctx.db_path)?;
+                    let synced = jobs.find_by_prefix(prefix)?;
+                    println!("{}", serde_json::to_string_pretty(&[synced])?);
+                }
             }
             Err(e) => {
                 error!("Failed to pull job {}: {}", job.short_id(), e);
@@ -90,6 +96,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
         }
 
         let arcmtx = Arc::new(Mutex::new(jobs));
+        let synced: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
 
         syncable_jobs.par_iter().for_each(|(remote_name, ids)| {
             let remote = match ctx.config.get_remote(remote_name) {
@@ -118,12 +125,19 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
                     Ok(sync_time) => {
                         if let Err(e) = arcmtx.lock().unwrap().update_sync_time(id, sync_time) {
                             error!("Failed to update sync time for {}: {}", job.short_id(), e);
+                        } else {
+                            synced.lock().unwrap().push(job);
                         }
                     }
                     Err(e) => error!("Failed to pull job {}: {}", job.short_id(), e),
                 }
             });
         });
+
+        if ctx.json {
+            let synced = Arc::try_unwrap(synced).unwrap().into_inner().unwrap();
+            println!("{}", serde_json::to_string_pretty(&synced)?);
+        }
     }
 
     Ok(())
