@@ -140,6 +140,16 @@ impl QueueManager {
         }
     }
 
+    /// Returns the command to cancel a job in the queue.
+    pub fn cancel_command(&self, remote_id: &str) -> String {
+        let remote_id = shell_quote(remote_id);
+        match self {
+            Self::Pbs => format!("qdel {remote_id}"),
+            Self::Slurm => format!("scancel {remote_id}"),
+            Self::Pueue => format!("pueue kill {remote_id}"),
+        }
+    }
+
     /// Returns the command to submit a job to the queue.
     ///
     /// Constructs the appropriate submission command for the queue manager,

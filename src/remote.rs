@@ -103,6 +103,21 @@ impl Remote {
         Ok(remote_id)
     }
 
+    /// Cancels a job on the remote queue manager.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cancel command fails (e.g. job already finished).
+    pub fn cancel(
+        &self,
+        remote_id: &str,
+        connection: &dyn RemoteConnection,
+    ) -> Result<(), Error> {
+        let command = self.queue_manager.cancel_command(remote_id);
+        connection.execute(&command)?;
+        Ok(())
+    }
+
     /// Retrieves job statuses from the remote queue manager.
     ///
     /// Queries the queue manager for current job statuses and parses the output
