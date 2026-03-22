@@ -118,9 +118,9 @@ impl Jobs {
             info!("Jobs with status changes @ {}:", &remotename);
             for job in changed_jobs {
                 info!(
-                    "  - Job {} with ID {} @ {}: changed to {:?}",
+                    "  - Job {} ({}) @ {}: changed to {:?}",
                     job.filename(),
-                    job.id(),
+                    job.short_id(),
                     job.remote(),
                     job.status()
                 );
@@ -139,9 +139,9 @@ impl Jobs {
         ignore: &[glob::Pattern],
     ) -> Result<chrono::DateTime<Utc>, Error> {
         info!(
-            "Syncing job {} id {} @ {}",
+            "Syncing job {} ({}) @ {}",
             job.filename(),
-            job.id(),
+            job.short_id(),
             job.remote()
         );
 
@@ -159,7 +159,7 @@ impl Jobs {
         let job = self
             .iter_mut()
             .find(|j| j.uuid() == id)
-            .ok_or_else(|| Error::JobNotFound(id.to_owned()))?;
+            .ok_or_else(|| Error::JobNotFound(id.to_string()))?;
 
         job.set_sync_time(sync_time);
 
@@ -168,6 +168,24 @@ impl Jobs {
 
     pub fn find_by_id(&self, id: &Uuid) -> Option<&Job> {
         self.jobs.iter().find(|j| j.uuid() == id)
+    }
+
+    /// Finds a job by a UUID prefix. Accepts any prefix length.
+    /// Errors if zero or more than one job matches.
+    pub fn find_by_prefix(&self, prefix: &str) -> Result<&Job, Error> {
+        let matches: Vec<&Job> = self
+            .jobs
+            .iter()
+            .filter(|j| j.uuid().to_string().starts_with(prefix))
+            .collect();
+        match matches.len() {
+            0 => Err(Error::JobNotFound(prefix.to_string())),
+            1 => Ok(matches[0]),
+            _ => Err(Error::AmbiguousPrefix {
+                prefix: prefix.to_string(),
+                matches: matches.iter().map(|j| j.short_id()).collect::<Vec<_>>().join(", "),
+            }),
+        }
     }
 
     /// Returns a map of syncable jobs grouped by remote system.
@@ -253,7 +271,7 @@ impl Jobs {
 #[derive(Copy, Clone)]
 pub struct JobQuery<'a> {
     jobs: &'a [Job],
-    id: Option<&'a u16>,
+    prefix: Option<&'a str>,
     uuid: Option<&'a Uuid>,
     synced: Option<bool>,
     status: Option<&'a JobStatus>,
@@ -270,7 +288,7 @@ impl<'a> JobQuery<'a> {
     fn new(jobs: &'a [Job]) -> Self {
         Self {
             jobs,
-            id: None,
+            prefix: None,
             uuid: None,
             synced: None,
             status: None,
@@ -283,8 +301,8 @@ impl<'a> JobQuery<'a> {
         }
     }
 
-    pub fn with_id(mut self, id: &'a u16) -> Self {
-        self.id = Some(id);
+    pub fn with_prefix(mut self, prefix: &'a str) -> Self {
+        self.prefix = Some(prefix);
         self
     }
 
@@ -347,7 +365,7 @@ impl<'a> JobQuery<'a> {
     pub fn iter(self) -> impl Iterator<Item = &'a Job> {
         let Self {
             jobs,
-            id,
+            prefix,
             uuid,
             synced,
             status,
@@ -360,12 +378,12 @@ impl<'a> JobQuery<'a> {
         } = self;
 
         jobs.iter().filter(move |job| {
-            let id_match = id.is_none_or(|id| id == job.id());
+            let prefix_match = prefix.is_none_or(|p| job.uuid().to_string().starts_with(p));
             let uuid_match = uuid.is_none_or(|id| id == job.uuid());
             let synced_match = synced.is_none_or(|synced| synced == job.synced());
             let status_match = status.is_none_or(|st| st == job.status());
             let remote_id_match = remote_id.is_none_or(|id| id == job.remote_id());
-            let remote_match = remote.is_none_or(|r| job.remote().contains(r));
+            let remote_match = remote.is_none_or(|r| job.remote() == r);
             let name_match = filename.is_none_or(|f| job.filename().contains(f));
             let dir_match =
                 directory.is_none_or(|d| job.work_dir().to_str().is_some_and(|s| s.contains(d)));
@@ -373,7 +391,7 @@ impl<'a> JobQuery<'a> {
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| st > t));
 
-            id_match
+            prefix_match
                 && uuid_match
                 && synced_match
                 && status_match

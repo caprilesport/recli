@@ -4,8 +4,10 @@ use uuid::Uuid;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
-    #[error("Job with id {0} not found")]
-    JobNotFound(Uuid),
+    #[error("No job found matching prefix '{0}'")]
+    JobNotFound(String),
+    #[error("Ambiguous prefix '{prefix}': matches {matches}")]
+    AmbiguousPrefix { prefix: String, matches: String },
     #[error("Connection error:\n{0}")]
     Ssh(#[from] crate::connection::Error),
     #[error("Failed writing file:\n{0}")]
@@ -23,7 +25,6 @@ pub enum Error {
 /// Beyond information that is related to each job, such as in which remote it's being ran, what is it's status, it's remote ID, etc., we also hold to which project this belongs.
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
-    id: u16,
     uuid: Uuid,
     remote: String,
     remote_id: String,
@@ -37,7 +38,6 @@ pub struct Job {
 
 impl Job {
     pub fn new(
-        id: u16,
         uuid: Uuid,
         remote: String,
         remote_id: String,
@@ -46,7 +46,6 @@ impl Job {
         work_dir: PathBuf,
     ) -> Result<Self, Error> {
         Ok(Self {
-            id,
             uuid,
             remote,
             remote_id,
@@ -63,8 +62,8 @@ impl Job {
         &self.uuid
     }
 
-    pub fn id(&self) -> &u16 {
-        &self.id
+    pub fn short_id(&self) -> String {
+        self.uuid.to_string()[..7].to_string()
     }
 
     pub fn remote_id(&self) -> &str {
@@ -152,7 +151,6 @@ mod tests {
     fn test_job_serialization_deserialization() {
         let job_id = Uuid::new_v4();
         let job = Job {
-            id: 1,
             uuid: job_id,
             filename: "test-file".to_string(),
             remote: "test_remote".to_string(),
@@ -167,7 +165,7 @@ mod tests {
         let serialized = serde_json::to_string(&job).unwrap();
         let deserialized: Job = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(job.id(), deserialized.id());
+        assert_eq!(job.short_id(), deserialized.short_id());
         assert_eq!(job.remote(), deserialized.remote());
         assert_eq!(job.status(), deserialized.status());
     }

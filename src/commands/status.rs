@@ -22,9 +22,9 @@ pub struct Args {
     #[arg(long, action)]
     pub show_id: bool,
 
-    /// Filter by id
+    /// Filter by UUID prefix
     #[arg(long, short)]
-    pub id: Option<u16>,
+    pub id: Option<String>,
 
     /// Filter by uuid
     #[arg(long, short)]
@@ -71,8 +71,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
 
     let mut query = jobs.query();
 
-    if let Some(id) = args.id {
-        query.with_id(&id);
+    if let Some(ref prefix) = args.id {
+        query = query.with_prefix(prefix);
     }
 
     if let Some(uuid) = args.uuid {
@@ -145,7 +145,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
 
     jobs.iter().for_each(|j| {
         let j_uuid = j.uuid().to_string();
-        let id = j.id().to_string();
+        let id = j.short_id();
         let work_dir = j.work_dir().to_string_lossy().to_string();
         let submit_time = j
             .submit_time()

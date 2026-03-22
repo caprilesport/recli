@@ -14,7 +14,8 @@ use tracing::{error, info};
 /// its current status.
 #[derive(clap::Args, Debug)]
 pub struct Args {
-    job_id: Option<u16>,
+    /// Job UUID prefix to sync a single job
+    job_id: Option<String>,
     #[arg(short, long, default_value_t = false)]
     update_status: bool,
     /// Sync all files, ignoring the ignore file
@@ -30,12 +31,9 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
 
     match args.job_id {
-        Some(id) => {
+        Some(ref prefix) => {
             let (job, job_uuid, remote_name) = {
-                let job = jobs
-                    .iter()
-                    .find(|j| j.id() == &id)
-                    .ok_or_else(|| anyhow::anyhow!("Job with ID {0} not found", &id))?;
+                let job = jobs.find_by_prefix(prefix)?;
                 (job, *job.uuid(), job.remote())
             };
 
@@ -49,7 +47,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to sync job {}: {}", job.id(), e);
+                    error!("Failed to sync job {}: {}", job.short_id(), e);
                     return Err(e.into());
                 }
             }
@@ -94,11 +92,11 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
                                 if let Err(e) =
                                     arcmtx.lock().unwrap().update_synced_job(id, sync_time)
                                 {
-                                    error!("Failed to sync job {}: {}", job.id(), e);
+                                    error!("Failed to sync job {}: {}", job.short_id(), e);
                                 };
                             }
                             Err(e) => {
-                                error!("Failed to sync job {}: {}", job.id(), e);
+                                error!("Failed to sync job {}: {}", job.short_id(), e);
                             }
                         }
                     });

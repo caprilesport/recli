@@ -31,7 +31,6 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         })?;
 
     let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
-    let internal_id = (jobs.iter().count() + 1) as u16;
 
     let connection = match SshConnection::new(remote) {
         Ok(sshconnection) => sshconnection,
@@ -45,7 +44,6 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     let work_dir = std::env::current_dir()?;
 
     let job = Job::new(
-        internal_id,
         id,
         remote.name().to_owned(),
         remote_id,
@@ -55,9 +53,9 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
     )?;
 
     info!(
-        "Job {} with id: {} and remote id: {} submitted successfully ",
+        "Job {} ({}) with remote id: {} submitted successfully",
         job.filename(),
-        job.id(),
+        job.short_id(),
         job.remote_id()
     );
 
