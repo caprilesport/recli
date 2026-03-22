@@ -91,6 +91,13 @@ pub trait RemoteConnection {
         local_dir: &Path,
         ignore: &[glob::Pattern],
     ) -> Result<(), Error>;
+
+    /// Removes a directory and all its contents on the remote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command fails.
+    fn remove_dir(&self, path: &Path) -> Result<(), Error>;
 }
 
 pub struct SshConnection {
@@ -367,6 +374,13 @@ impl RemoteConnection for SshConnection {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn remove_dir(&self, path: &Path) -> Result<(), Error> {
+        debug!("Removing directory {:?} @ remote", path);
+        let quoted = format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
+        self.execute(&format!("rm -rf {quoted}"))?;
         Ok(())
     }
 }

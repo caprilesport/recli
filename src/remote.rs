@@ -108,11 +108,7 @@ impl Remote {
     /// # Errors
     ///
     /// Returns an error if the cancel command fails (e.g. job already finished).
-    pub fn cancel(
-        &self,
-        remote_id: &str,
-        connection: &dyn RemoteConnection,
-    ) -> Result<(), Error> {
+    pub fn cancel(&self, remote_id: &str, connection: &dyn RemoteConnection) -> Result<(), Error> {
         let command = self.queue_manager.cancel_command(remote_id);
         connection.execute(&command)?;
         Ok(())
@@ -199,6 +195,10 @@ mod tests {
             self.downloads
                 .borrow_mut()
                 .push((remote_dir.to_path_buf(), local_dir.to_path_buf()));
+            Ok(())
+        }
+
+        fn remove_dir(&self, _path: &Path) -> Result<(), crate::connection::Error> {
             Ok(())
         }
     }

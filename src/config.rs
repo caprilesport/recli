@@ -25,11 +25,27 @@ pub enum FileStrategy {
     Directory,
 }
 
+fn default_prune_days() -> u32 {
+    90
+}
+
 /// Global recli settings, configured under `[settings]` in `config.toml`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
     pub file_strategy: FileStrategy,
+    /// Minimum age in days since sync before a job qualifies for `recli prune`.
+    #[serde(default = "default_prune_days")]
+    pub prune_after_days: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            file_strategy: FileStrategy::default(),
+            prune_after_days: default_prune_days(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

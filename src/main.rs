@@ -53,6 +53,7 @@ enum Mode {
     Status(commands::status::Args),
     Info(commands::info::Args),
     Cancel(commands::cancel::Args),
+    Prune(commands::prune::Args),
     /// Generate shell completion scripts
     Completions {
         /// The shell to generate the script for
@@ -117,6 +118,7 @@ fn main() -> color_eyre::Result<()> {
         Some(Mode::Info(args)) => commands::info::execute(args, ctx)?,
         Some(Mode::Status(args)) => commands::status::execute(args, ctx)?,
         Some(Mode::Cancel(args)) => commands::cancel::execute(args, ctx)?,
+        Some(Mode::Prune(args)) => commands::prune::execute(args, ctx)?,
         None => {
             let args = commands::status::Args::default();
             commands::status::execute(args, ctx)?;

@@ -189,6 +189,20 @@ impl Jobs {
         Ok(())
     }
 
+    /// Deletes a job from the database by UUID.
+    ///
+    /// # Errors
+    /// - If the database cannot be opened
+    /// - If the DELETE statement fails
+    pub fn delete_job(path: &Path, uuid: &Uuid) -> Result<(), Error> {
+        let conn = open_db(path)?;
+        conn.execute(
+            "DELETE FROM jobs WHERE uuid = ?1",
+            params![uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
     fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(
