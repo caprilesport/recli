@@ -1,7 +1,8 @@
 use crate::jobs::Jobs;
 use chrono::{Duration, Utc};
+use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
+use comfy_table::{Cell, ContentArrangement, Table};
 use std::io::{IsTerminal, Write};
-use tabled::builder::Builder;
 use uuid::Uuid;
 
 use crate::job::{Job, JobStatus};
@@ -107,47 +108,45 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         query = query.synced(false);
     }
 
-    let jobs = query.iter().collect();
+    let jobs: Vec<&Job> = query.iter().collect();
     let mut stdout = std::io::stdout().lock();
-
-    if stdout.is_terminal() {
-        let mut table = create_status_table(jobs, args.show_id, true);
-        table
-            .with(tabled::settings::Style::rounded())
-            .with(tabled::settings::Alignment::center());
-        writeln!(stdout, "{table}")?;
-    } else {
-        let mut table = create_status_table(jobs, args.show_id, false);
-        table.with(tabled::settings::Style::empty());
-        writeln!(stdout, "{table}")?;
-    }
+    let is_tty = stdout.is_terminal();
+    let table = create_status_table(jobs, args.show_id, is_tty);
+    writeln!(stdout, "{table}")?;
 
     Ok(())
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tabled::Table {
-    let mut builder = Builder::default();
+fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
+    let mut table = Table::new();
 
-    if with_header {
-        let mut headers = vec![
-            "ID",
-            "Work dir",
-            "Name",
-            "Status",
-            "Remote",
-            "Submit time",
-            "Sync time",
-        ];
-        if with_id {
-            headers.push("Remote ID");
-            headers.push("ID");
-        }
-        builder.push_record(headers);
+    if is_tty {
+        table
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .load_preset(UTF8_HORIZONTAL_ONLY);
+    } else {
+        table
+            .set_content_arrangement(ContentArrangement::Disabled)
+            .load_preset(comfy_table::presets::NOTHING);
     }
 
+    let mut headers = vec![
+        "ID",
+        "Work dir",
+        "Name",
+        "Status",
+        "Remote",
+        "Submit time",
+        "Sync time",
+    ];
+    if with_id {
+        headers.push("Remote ID");
+        headers.push("UUID");
+    }
+    table.set_header(headers);
+
     for j in &jobs {
-        let j_uuid = j.uuid().to_string();
         let id = j.short_id();
         let work_dir = j.work_dir().to_string_lossy().to_string();
         let submit_time = j
@@ -160,23 +159,24 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, with_header: bool) -> tab
                 .with_timezone(&chrono::Local)
                 .format("%Y-%m-%d %H:%M")
                 .to_string(),
-            None => "None".to_string(),
+            None => "─".to_string(),
         };
-        let mut row = vec![
-            &id,
-            &work_dir,
-            j.filename(),
-            j.status().as_str(),
-            j.remote(),
-            &submit_time,
-            &sync_time,
+
+        let mut row: Vec<Cell> = vec![
+            Cell::new(&id),
+            Cell::new(&work_dir),
+            Cell::new(j.filename()),
+            super::status_cell(*j.status(), is_tty),
+            Cell::new(j.remote()),
+            Cell::new(&submit_time),
+            Cell::new(&sync_time),
         ];
         if with_id {
-            row.push(j.remote_id());
-            row.push(&j_uuid);
+            row.push(Cell::new(j.remote_id()));
+            row.push(Cell::new(j.uuid().to_string()));
         }
-        builder.push_record(row);
+        table.add_row(row);
     }
 
-    builder.build()
+    table
 }

@@ -9,7 +9,6 @@ edition = "2024"
 anyhow = "1.0.69"
 clap = { version = "4.0", features = ["derive"] }
 clap-verbosity-flag = "2.0.0"
-tabled = "0.20.0"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 serde = {version = "1.0.152", features = ["derive"]}
@@ -29,4 +28,5 @@ duct = "1.0.0"
 rpassword = "7.4.0"
 clap_complete = "4.5.64"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
+comfy-table = "7.2.2"
 
