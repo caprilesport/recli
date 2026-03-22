@@ -123,6 +123,24 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     Ok(())
 }
 
+fn short_path(path: &std::path::Path) -> String {
+    let parts: Vec<_> = path.iter().collect();
+    if parts.len() <= 3 {
+        return path.to_string_lossy().to_string();
+    }
+    let tail: std::path::PathBuf = parts[parts.len() - 3..].iter().collect();
+    format!("…/{}", tail.display())
+}
+
+fn fmt_datetime(dt: &chrono::DateTime<chrono::Utc>, two_line: bool) -> String {
+    let local = dt.with_timezone(&chrono::Local);
+    if two_line {
+        format!("{}\n{}", local.format("%Y-%m-%d"), local.format("%H:%M"))
+    } else {
+        local.format("%Y-%m-%d %H:%M").to_string()
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)]
 fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
     let mut table = Table::new();
@@ -154,17 +172,14 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
 
     for j in &jobs {
         let id = j.short_id();
-        let work_dir = j.work_dir().to_string_lossy().to_string();
-        let submit_time = j
-            .submit_time()
-            .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M")
-            .to_string();
+        let work_dir = if is_tty {
+            short_path(j.work_dir())
+        } else {
+            j.work_dir().to_string_lossy().to_string()
+        };
+        let submit_time = fmt_datetime(j.submit_time(), is_tty);
         let sync_time = match j.sync_time() {
-            Some(date) => date
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string(),
+            Some(date) => fmt_datetime(date, is_tty),
             None => "─".to_string(),
         };
 
