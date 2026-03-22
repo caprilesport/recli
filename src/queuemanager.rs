@@ -3,6 +3,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
+
+static RE_PUEUE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"id (\d+)").unwrap());
+static RE_SLURM_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d+)").unwrap());
 
 /// Supported queue managers
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -29,18 +33,14 @@ impl QueueManager {
     pub fn get_id(&self, output: String) -> String {
         match self {
             Self::Pbs => output.trim().to_string(),
-            Self::Pueue => {
-                let re = Regex::new(r"id (\d+)").unwrap();
-                re.captures(&output)
-                    .and_then(|caps| caps.get(1))
-                    .map_or_else(|| "".to_string(), |m| m.as_str().to_string())
-            }
-            Self::Slurm => {
-                let re = Regex::new(r"(\d+)").unwrap();
-                re.captures(&output)
-                    .and_then(|caps| caps.get(1))
-                    .map_or_else(|| "".to_string(), |m| m.as_str().to_string())
-            }
+            Self::Pueue => RE_PUEUE_ID
+                .captures(&output)
+                .and_then(|caps| caps.get(1))
+                .map_or_else(|| "".to_string(), |m| m.as_str().to_string()),
+            Self::Slurm => RE_SLURM_ID
+                .captures(&output)
+                .and_then(|caps| caps.get(1))
+                .map_or_else(|| "".to_string(), |m| m.as_str().to_string()),
         }
     }
 
@@ -145,13 +145,20 @@ impl QueueManager {
     /// * `remote_dir` - The working directory where the job should be executed
     /// * `job_name` - The name of the job script file to submit
     pub fn submit_command(&self, remote_dir: &Path, job_name: &str) -> String {
-        let remote_dir = remote_dir.to_string_lossy();
+        let remote_dir = shell_quote(&remote_dir.to_string_lossy());
+        let job_name = shell_quote(job_name);
         match self {
-            Self::Pbs => format!("cd {} && qsub {} ", remote_dir, job_name),
-            Self::Pueue => format!("cd {} && . ./{} ", remote_dir, job_name),
-            Self::Slurm => format!("cd {} && sbatch {} ", remote_dir, job_name),
+            Self::Pbs => format!("cd {remote_dir} && qsub {job_name}"),
+            Self::Pueue => format!("pueue add --working-directory {remote_dir} -- ./{job_name}"),
+            Self::Slurm => format!("cd {remote_dir} && sbatch {job_name}"),
         }
     }
+}
+
+/// Wraps a string in single quotes for safe shell interpolation.
+/// Internal single quotes are escaped using the `'\''` idiom.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 #[cfg(test)]
