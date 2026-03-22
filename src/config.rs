@@ -2,11 +2,43 @@ use crate::remote::Remote;
 use serde::{Deserialize, Serialize};
 use tracing::trace;
 
+/// Controls which local files are uploaded alongside the job script on submit.
+///
+/// Configured globally under `[settings]` in `config.toml`. Can be overridden
+/// per invocation with `recli submit --strategy <value>`.
+///
+/// For `Basename` and `Directory`, files are scanned from the **script's parent
+/// directory** (not the working directory where recli is invoked). `--files`
+/// paths are always resolved relative to the current working directory.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum FileStrategy {
+    /// Upload only the job script itself. Use when input data is pre-staged
+    /// on the remote or shared across many jobs.
+    #[default]
+    Script,
+    /// Upload the script plus all files in its directory that share the same
+    /// stem (e.g. `myjob.pbs`, `myjob.inp`, `myjob.xyz`).
+    Basename,
+    /// Upload all files in the script's directory, filtered by the `ignore`
+    /// file (`~/.config/recli/ignore`).
+    Directory,
+}
+
+/// Global recli settings, configured under `[settings]` in `config.toml`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Settings {
+    #[serde(default)]
+    pub file_strategy: FileStrategy,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub remotes: Vec<Remote>,
     #[serde(skip)]
     pub ignore: Vec<glob::Pattern>,
+    #[serde(default)]
+    pub settings: Settings,
 }
 
 #[derive(thiserror::Error, std::fmt::Debug)]

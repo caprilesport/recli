@@ -19,8 +19,6 @@ pub enum Error {
 /// Main abstraction for a `Job`.
 ///
 /// The main referral unit in any job is it's UUID, to interact with jobs throught the application this is the preferred way to refer to a job.
-///
-/// Beyond information that is related to each job, such as in which remote it's being ran, what is it's status, it's remote ID, etc., we also hold to which project this belongs.
 #[derive(std::fmt::Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Job {
     uuid: Uuid,
@@ -138,7 +136,7 @@ impl Job {
 /// [Pueue](https://github.com/Nukesor/pueue/blob/21c6b928d0728439cf708b4fb58acca5effc1a25/pueue_lib/src/task.rs#L11)
 ///
 /// The `Undefined` variant is reserved for all status that are encountered and are not defined here. This may happen mainly with different PBS versions and some status for SLURM that are currently not implemented.
-//TODO: complete this with all possible variants encoutered in the Queue managers we support.
+// TODO: complete this with all possible variants encoutered in the Queue managers we support.
 // Slurm, for instance, has several status descriptions which could be usefull
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy, clap::ValueEnum)]
 pub enum JobStatus {

@@ -7,8 +7,6 @@ use crate::queuemanager::QueueManager;
 
 use std::collections::HashMap;
 
-
-
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
     #[error("Connection error:\n{0}")]
