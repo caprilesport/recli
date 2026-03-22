@@ -175,10 +175,7 @@ mod tests {
         assert_eq!(QueueManager::Pueue.get_id(pueue_output), "2");
 
         let slurm_output = "Submitted batch job 67890".to_string();
-        assert_eq!(
-            QueueManager::Slurm.get_id(slurm_output),
-            "Submitted batch job 67890"
-        );
+        assert_eq!(QueueManager::Slurm.get_id(slurm_output), "67890");
     }
 
     #[test]
@@ -228,7 +225,10 @@ Group "default" (1 parallel): running
             QueueManager::Pueue.status_command("testuser"),
             "pueue status"
         );
-        assert_eq!(QueueManager::Slurm.status_command("testuser"), "");
+        assert_eq!(
+            QueueManager::Slurm.status_command("testuser"),
+            "sacct -X --starttime 1970-01-01"
+        );
     }
 
     #[test]
@@ -237,15 +237,15 @@ Group "default" (1 parallel): running
         let job_name = "script.job";
         assert_eq!(
             QueueManager::Pbs.submit_command(remote_dir, job_name),
-            "cd /remote/work/job1 && qsub script.job "
+            "cd '/remote/work/job1' && qsub 'script.job'"
         );
         assert_eq!(
             QueueManager::Pueue.submit_command(remote_dir, job_name),
-            "cd /remote/work/job1 && . ./script.job "
+            "pueue add --working-directory '/remote/work/job1' -- ./'script.job'"
         );
         assert_eq!(
             QueueManager::Slurm.submit_command(remote_dir, job_name),
-            "cd /remote/work/job1 && sbatch script.job "
+            "cd '/remote/work/job1' && sbatch 'script.job'"
         );
     }
 }
