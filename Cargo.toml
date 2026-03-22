@@ -7,7 +7,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.69"
-atomicwrites = "0.4.4"
 clap = { version = "4.0", features = ["derive"] }
 clap-verbosity-flag = "2.0.0"
 tabled = "0.20.0"
@@ -29,4 +28,5 @@ tempfile = "3.20.0"
 duct = "1.0.0"
 rpassword = "7.4.0"
 clap_complete = "4.5.64"
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 

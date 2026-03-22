@@ -1,17 +1,23 @@
 use crate::job::{Error, Job, JobStatus};
-use atomicwrites::{AllowOverwrite, AtomicFile};
 use chrono::{DateTime, Utc};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
 use tracing::info;
 use uuid::Uuid;
 
+const DB_VERSION: &str = "1";
+
 /// A collection of `Job`s that provides centralized management and operations.
 ///
-/// This is the primary interface for interacting with jobs. The `Jobs` container provides methods for persistence, querying, synchronization, and batch operations on job collections.
+/// This is the primary interface for interacting with jobs. The `Jobs` container provides
+/// methods for persistence, querying, synchronization, and batch operations on job
+/// collections.
 #[derive(Debug, Clone)]
 pub struct Jobs {
     jobs: Vec<Job>,
+    db_path: PathBuf,
 }
 
 impl Deref for Jobs {
@@ -28,95 +34,217 @@ impl DerefMut for Jobs {
     }
 }
 
+fn open_db(path: &Path) -> Result<Connection, Error> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA busy_timeout=5000;
+         CREATE TABLE IF NOT EXISTS jobs (
+             uuid        TEXT PRIMARY KEY,
+             remote      TEXT NOT NULL,
+             remote_id   TEXT,
+             name        TEXT,
+             script_file TEXT,
+             work_dir    TEXT,
+             remote_dir  TEXT,
+             status      TEXT,
+             tags        TEXT,
+             queue       TEXT,
+             submit_time TEXT,
+             sync_time   TEXT
+         );
+         CREATE TABLE IF NOT EXISTS meta (
+             key   TEXT PRIMARY KEY,
+             value TEXT
+         );",
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('version', ?1)",
+        params![DB_VERSION],
+    )?;
+    Ok(conn)
+}
+
+fn parse_status(s: &str) -> JobStatus {
+    match s {
+        "Q" => JobStatus::Queued,
+        "R" => JobStatus::Running,
+        "F" => JobStatus::Finished,
+        "E" => JobStatus::Error,
+        _ => JobStatus::Undefined,
+    }
+}
+
 impl Jobs {
-    /// Saves the job collection to a JSON file at the specified path.
+    /// Loads the job collection from a `SQLite` database at the specified path.
     ///
-    /// This method serializes the entire job collection to JSON format and writes it to the given file path. If the file already exists, it will be overwritten.
+    /// If the database does not exist, it will be created with the appropriate schema.
     ///
     /// # Errors
-    /// - If file serialization fails will throw a `serde_json::Error`
-    /// - File creation may fail in some platforms if the directory does not exist
-    ///
-    /// # Examples
-    /// ```
-    /// jobs.save_jobs(Path::new("jobs.json"))?;
-    /// ```
-    pub fn save_jobs(&self, json_file_path: &std::path::Path) -> Result<(), Error> {
-        tracing::debug!("Saving jobs to {:?}", json_file_path);
+    /// - If the database cannot be opened or created
+    /// - If rows cannot be read or parsed
+    pub fn load_from_db(path: &Path) -> Result<Self, Error> {
+        let conn = open_db(path)?;
+        let mut stmt = conn.prepare(
+            "SELECT uuid, remote, remote_id, name, work_dir, remote_dir, status, submit_time, sync_time \
+             FROM jobs ORDER BY submit_time",
+        )?;
 
-        let atomic_file = AtomicFile::new(json_file_path, AllowOverwrite);
-        atomic_file.write(|temp_file| serde_json::to_writer_pretty(temp_file, &self.jobs))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,         // uuid
+                    row.get::<_, String>(1)?,         // remote
+                    row.get::<_, Option<String>>(2)?, // remote_id
+                    row.get::<_, Option<String>>(3)?, // name
+                    row.get::<_, Option<String>>(4)?, // work_dir
+                    row.get::<_, Option<String>>(5)?, // remote_dir
+                    row.get::<_, Option<String>>(6)?, // status
+                    row.get::<_, String>(7)?,         // submit_time
+                    row.get::<_, Option<String>>(8)?, // sync_time
+                ))
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+
+        let jobs = rows
+            .into_iter()
+            .map(
+                |(
+                    uuid_str,
+                    remote,
+                    remote_id,
+                    name,
+                    work_dir,
+                    remote_dir,
+                    status_str,
+                    submit_time_str,
+                    sync_time_str,
+                )| {
+                    let uuid = uuid_str.parse::<Uuid>().map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid UUID: {uuid_str}"),
+                        )
+                    })?;
+                    let submit_time = submit_time_str.parse::<DateTime<Utc>>().map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid datetime: {submit_time_str}"),
+                        )
+                    })?;
+                    let sync_time = sync_time_str
+                        .map(|s| {
+                            s.parse::<DateTime<Utc>>().map_err(|_| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("Invalid datetime: {s}"),
+                                )
+                            })
+                        })
+                        .transpose()?;
+                    Ok(Job::from_parts(
+                        uuid,
+                        remote,
+                        remote_id.unwrap_or_default(),
+                        name.unwrap_or_default(),
+                        PathBuf::from(work_dir.unwrap_or_default()),
+                        PathBuf::from(remote_dir.unwrap_or_default()),
+                        parse_status(status_str.as_deref().unwrap_or("")),
+                        submit_time,
+                        sync_time,
+                    ))
+                },
+            )
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
+
+        Ok(Self {
+            jobs,
+            db_path: path.to_path_buf(),
+        })
+    }
+
+    /// Inserts a new job into the database at the given path.
+    ///
+    /// # Errors
+    /// - If the database cannot be opened
+    /// - If the INSERT statement fails
+    pub fn insert_job(path: &Path, job: &Job) -> Result<(), Error> {
+        let conn = open_db(path)?;
+        conn.execute(
+            "INSERT INTO jobs \
+             (uuid, remote, remote_id, name, work_dir, remote_dir, status, submit_time, sync_time) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                job.uuid().to_string(),
+                job.remote(),
+                job.remote_id(),
+                job.filename(),
+                job.work_dir().to_str().unwrap_or(""),
+                job.remote_dir().to_str().unwrap_or(""),
+                job.status().as_str(),
+                job.submit_time().to_rfc3339(),
+                job.sync_time().map(DateTime::to_rfc3339),
+            ],
+        )?;
         Ok(())
     }
 
-    /// Loads a job collection from a JSON file at the specified path.
-    ///
-    /// If the file doesn't exist or is empty, returns an empty job collection.
+    fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET status = ?1 WHERE uuid = ?2",
+            params![status.as_str(), uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Updates the sync time for a job in the database.
     ///
     /// # Errors
-    /// - If file deserialization fails will throw a `serde_json::Error`
-    ///
-    /// The above is mainly due to a malformed JSON file, which may happen if the user manually edits the file for some reason.
-    ///
-    /// # Examples
-    /// ```
-    /// let jobs = Jobs::load_jobs(Path::new("jobs.json"))?;
-    /// ```
-    pub fn load_jobs(json_file_path: &std::path::Path) -> Result<Self, Error> {
-        tracing::debug!("Loading jobs from {:?}", json_file_path);
-        if !json_file_path.exists() {
-            return Ok(Jobs { jobs: Vec::new() });
-        }
-
-        let file = std::fs::File::open(json_file_path)?;
-        if file.metadata()?.len() == 0 {
-            return Ok(Jobs { jobs: Vec::new() });
-        }
-
-        let file = std::fs::File::open(json_file_path)?;
-        let reader = std::io::BufReader::new(file);
-        let jobs: Vec<Job> = serde_json::from_reader(reader)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(Jobs { jobs })
+    /// - If the database cannot be opened
+    /// - If the UPDATE statement fails
+    pub fn update_sync_time(&self, uuid: &Uuid, sync_time: DateTime<Utc>) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET sync_time = ?1 WHERE uuid = ?2",
+            params![sync_time.to_rfc3339(), uuid.to_string()],
+        )?;
+        Ok(())
     }
 
     /// Updates job statuses based on a provided status map and logs changes.
     ///
-    /// Compares current job statuses with provided statuses and updates jobs where the remote status differs. Logs all status changes for monitoring purposes.
+    /// Compares current job statuses with provided statuses and updates jobs where the
+    /// remote status differs. Each change is persisted to the database immediately.
     ///
-    /// # Examples
-    /// ```
-    /// let mut status_map = HashMap::new();
-    /// status_map.insert("job123".to_string(), JobStatus::Finished);
-    /// jobs.update(status_map, "remote-cluster");
-    /// ```
-    pub fn update(&mut self, statuses: &HashMap<String, JobStatus>, remotename: &str) {
+    /// # Errors
+    /// - If any database UPDATE fails
+    pub fn update(
+        &mut self,
+        statuses: &HashMap<String, JobStatus>,
+        remotename: &str,
+    ) -> Result<(), Error> {
         let mut changed_jobs = Vec::new();
 
-        // we filter by non-synced jobs just to be sure that we don't have ID collision
-        // in case of a queue reset or something similar.
         for job in self
             .jobs
             .iter_mut()
             .filter(|j| !j.synced() && j.remote() == remotename)
         {
             let old_status = *job.status();
-            let status = statuses.get(job.remote_id());
-
-            if let Some(st) = status {
+            if let Some(st) = statuses.get(job.remote_id()) {
                 job.set_status(*st);
             }
-
             if job.status() != &old_status {
                 changed_jobs.push(job.clone());
             }
         }
 
         if changed_jobs.is_empty() {
-            info!("No job status changes @ {}:", &remotename);
+            info!("No job status changes @ {}:", remotename);
         } else {
-            info!("Jobs with status changes @ {}:", &remotename);
-            for job in changed_jobs {
+            info!("Jobs with status changes @ {}:", remotename);
+            for job in &changed_jobs {
                 info!(
                     "  - Job {} ({}) @ {}: changed to {:?}",
                     job.filename(),
@@ -124,46 +252,32 @@ impl Jobs {
                     job.remote(),
                     job.status()
                 );
+                self.update_job_status(job.uuid(), *job.status())?;
             }
         }
+
+        Ok(())
     }
 
     /// Synchronizes a specific job with its remote counterpart.
     ///
-    /// Downloads files from the remote working directory to the local working
-    /// directory and updates synchronization metadata. Optionally updates the
-    /// job's synced status.
+    /// Downloads files from the remote working directory to the local working directory.
+    ///
+    /// # Errors
+    /// - If the file download fails
     pub fn sync_job(
         job: &Job,
         connection: &dyn crate::connection::RemoteConnection,
         ignore: &[glob::Pattern],
-    ) -> Result<chrono::DateTime<Utc>, Error> {
+    ) -> Result<DateTime<Utc>, Error> {
         info!(
             "Syncing job {} ({}) @ {}",
             job.filename(),
             job.short_id(),
             job.remote()
         );
-
         connection.download_files(job.remote_dir(), job.work_dir(), ignore)?;
-        let sync_time = chrono::Utc::now();
-
-        Ok(sync_time)
-    }
-
-    pub fn update_synced_job(
-        &mut self,
-        id: &Uuid,
-        sync_time: chrono::DateTime<Utc>,
-    ) -> Result<(), Error> {
-        let job = self
-            .iter_mut()
-            .find(|j| j.uuid() == id)
-            .ok_or_else(|| Error::JobNotFound(id.to_string()))?;
-
-        job.set_sync_time(sync_time);
-
-        Ok(())
+        Ok(chrono::Utc::now())
     }
 
     pub fn find_by_id(&self, id: &Uuid) -> Option<&Job> {
@@ -171,7 +285,10 @@ impl Jobs {
     }
 
     /// Finds a job by a UUID prefix. Accepts any prefix length.
-    /// Errors if zero or more than one job matches.
+    ///
+    /// # Errors
+    /// - [`Error::JobNotFound`] if no jobs match the prefix
+    /// - [`Error::AmbiguousPrefix`] if multiple jobs match
     pub fn find_by_prefix(&self, prefix: &str) -> Result<&Job, Error> {
         let matches: Vec<&Job> = self
             .jobs
@@ -194,72 +311,40 @@ impl Jobs {
 
     /// Returns a map of syncable jobs grouped by remote system.
     ///
-    /// Identifies jobs that are in terminal states (Finished or Error) and
-    /// haven't been synced yet. The result is organized by remote system
-    /// for batch processing.
-    ///
-    /// # Examples
-    /// ```
-    /// let syncable = jobs.syncable();
-    /// for (remote, job_ids) in syncable {
-    ///     println!("Remote {} has {} jobs to sync", remote, job_ids.len());
-    /// }
-    /// ```
+    /// Identifies jobs that are in terminal states (Finished, Error, or Undefined) and
+    /// haven't been synced yet. The result is organized by remote system for batch
+    /// processing.
     pub fn syncable(&self) -> HashMap<String, Vec<Uuid>> {
         let mut jobs_by_remote: HashMap<String, Vec<Uuid>> = HashMap::new();
 
-        self.query()
-            .with_status(&JobStatus::Finished)
-            .synced(false)
-            .iter()
-            .for_each(|job| {
-                jobs_by_remote
-                    .entry(job.remote().to_string())
-                    .or_default()
-                    .push(*job.uuid());
-            });
-
-        self.query()
-            .with_status(&JobStatus::Error)
-            .synced(false)
-            .iter()
-            .for_each(|job| {
-                jobs_by_remote
-                    .entry(job.remote().to_string())
-                    .or_default()
-                    .push(*job.uuid());
-            });
-
-        self.query()
-            .with_status(&JobStatus::Undefined)
-            .synced(false)
-            .iter()
-            .for_each(|job| {
-                jobs_by_remote
-                    .entry(job.remote().to_string())
-                    .or_default()
-                    .push(*job.uuid());
-            });
+        for status in [JobStatus::Finished, JobStatus::Error, JobStatus::Undefined] {
+            self.query()
+                .with_status(&status)
+                .synced(false)
+                .iter()
+                .for_each(|job| {
+                    jobs_by_remote
+                        .entry(job.remote().to_string())
+                        .or_default()
+                        .push(*job.uuid());
+                });
+        }
 
         jobs_by_remote
     }
 
     /// Creates a new query builder for filtering and searching jobs.
     ///
-    /// Returns a `JobQuery` instance
+    /// Returns a `JobQuery` instance that can be used to filter jobs.
     pub fn query(&self) -> JobQuery<'_> {
         JobQuery::new(&self.jobs)
-    }
-
-    // TODO: use this to create a new job instead of delegating it to a Job::new? This way the `Jobs` struct becomes de standard for interacting with everything job related...!
-    pub fn add(&mut self, job: Job) {
-        self.jobs.push(job);
     }
 }
 
 /// A query builder for filtering and searching jobs.
 ///
-/// `JobQuery` provides a builder interface for constructing complex queries against a job collection. Each method adds a filter condition, and filters are combined with AND logic.
+/// `JobQuery` provides a builder interface for constructing complex queries against a job
+/// collection. Each method adds a filter condition, and filters are combined with AND logic.
 ///
 /// # Examples
 /// ```
@@ -267,8 +352,7 @@ impl Jobs {
 /// let results: Vec<&Job> = jobs.query()
 ///     .with_status(&JobStatus::Finished)
 ///     .synced(false)
-///     .with_remote(Match::Exact("cluster-a"))
-///     .with_submit_time_after(cutoff_time)
+///     .with_remote("cluster-a")
 ///     .iter()
 ///     .collect();
 /// ```
@@ -288,7 +372,6 @@ pub struct JobQuery<'a> {
 }
 
 impl<'a> JobQuery<'a> {
-    /// Creates a new query builder for the given job slice.
     fn new(jobs: &'a [Job]) -> Self {
         Self {
             jobs,
@@ -345,25 +428,15 @@ impl<'a> JobQuery<'a> {
         self
     }
 
-    // pub fn with_submit_time_after(mut self, time: DateTime<Utc>) -> Self {
-    //     self.submit_time_after = Some(time);
-    //     self
-    // }
-
-    // pub fn with_sync_time_after(mut self, time: DateTime<Utc>) -> Self {
-    //     self.sync_time_after = Some(time);
-    //     self
-    // }
-
     /// Executes the query and returns an iterator over matching jobs.
     ///
-    /// Applies all configured filters and returns an iterator that yields
-    /// references to jobs that match all conditions.
+    /// Applies all configured filters and returns an iterator that yields references to
+    /// jobs that match all conditions.
     ///
     /// # Examples
     /// ```
     /// for job in jobs.query().with_status(&JobStatus::Running).iter() {
-    ///     println!("Running job: {}", job.name());
+    ///     println!("Running job: {}", job.filename());
     /// }
     /// ```
     pub fn iter(self) -> impl Iterator<Item = &'a Job> {

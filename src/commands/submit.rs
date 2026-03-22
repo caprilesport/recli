@@ -31,8 +31,6 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
             )
         })?;
 
-    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
-
     let connection = match SshConnection::new(remote) {
         Ok(sshconnection) => sshconnection,
         Err(err) => {
@@ -60,7 +58,6 @@ pub fn execute(args: Args, ctx: crate::Context) -> anyhow::Result<()> {
         job.remote_id()
     );
 
-    jobs.add(job);
-    jobs.save_jobs(&ctx.json_file)?;
+    Jobs::insert_job(&ctx.db_path, &job)?;
     Ok(())
 }

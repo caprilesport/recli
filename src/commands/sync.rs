@@ -29,7 +29,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
         ctx.config.ignore.clear();
     }
 
-    let mut jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let jobs = Jobs::load_from_db(&ctx.db_path)?;
 
     if let Some(ref prefix) = args.job_id {
         let (job, job_uuid, remote_name) = {
@@ -43,7 +43,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
         match Jobs::sync_job(job, &connection, &ctx.config.ignore) {
             Ok(sync_time) => {
                 if args.update_status {
-                    jobs.update_synced_job(&job_uuid, sync_time)?;
+                    jobs.update_sync_time(&job_uuid, sync_time)?;
                 }
             }
             Err(e) => {
@@ -85,8 +85,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
 
                     match Jobs::sync_job(&job, &connection, &ctx.config.ignore) {
                         Ok(sync_time) => {
-                            if let Err(e) = arcmtx.lock().unwrap().update_synced_job(id, sync_time)
-                            {
+                            if let Err(e) = arcmtx.lock().unwrap().update_sync_time(id, sync_time) {
                                 error!("Failed to sync job {}: {}", job.short_id(), e);
                             }
                         }
@@ -97,7 +96,6 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> anyhow::Result<()> {
                 });
             });
         }
-        arcmtx.lock().unwrap().save_jobs(&ctx.json_file)?;
     }
 
     Ok(())

@@ -48,7 +48,7 @@ enum Mode {
 /// Holds the config for all the remotes registered, as well as the database for all the submitted jobs
 struct Context {
     config: crate::Config,
-    json_file: std::path::PathBuf,
+    db_path: std::path::PathBuf,
 }
 
 impl Context {
@@ -56,7 +56,7 @@ impl Context {
         let config = Config::read()?;
         Ok(Self {
             config,
-            json_file: Config::get_dir()?.join("jobs.json"),
+            db_path: Config::get_dir()?.join("jobs.db"),
         })
     }
 }

@@ -19,7 +19,7 @@ pub struct Args {
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
-    let jobs = Jobs::load_jobs(&ctx.json_file)?;
+    let jobs = Jobs::load_from_db(&ctx.db_path)?;
     let arcmtx = Arc::new(Mutex::new(jobs));
 
     match args.remote {
@@ -27,7 +27,7 @@ pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
             let remote = &ctx.config.get_remote(&remote_name)?;
             let connection = SshConnection::new(remote)?;
             let statuses = remote.status(&connection)?;
-            arcmtx.lock().unwrap().update(&statuses, remote.name());
+            arcmtx.lock().unwrap().update(&statuses, remote.name())?;
         }
         None => {
             ctx.config.remotes.par_iter().for_each(|remote| {
@@ -36,7 +36,13 @@ pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
                     Ok(sshconnection) => match remote.status(&sshconnection) {
                         Ok(statuses) => {
                             let mut jobs_guard = shared_jobs.lock().unwrap();
-                            jobs_guard.update(&statuses, remote.name());
+                            if let Err(e) = jobs_guard.update(&statuses, remote.name()) {
+                                error!(
+                                    "Failed to update statuses at {}, caused by {}",
+                                    remote.name(),
+                                    e
+                                );
+                            }
                         }
                         Err(e) => {
                             error!(
@@ -53,8 +59,6 @@ pub fn execute(args: Args, ctx: Context) -> anyhow::Result<()> {
             });
         }
     }
-
-    arcmtx.lock().unwrap().save_jobs(&ctx.json_file)?;
 
     Ok(())
 }

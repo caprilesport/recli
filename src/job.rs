@@ -10,10 +10,8 @@ pub enum Error {
     AmbiguousPrefix { prefix: String, matches: String },
     #[error("Connection error:\n{0}")]
     Ssh(#[from] crate::connection::Error),
-    #[error("Failed writing file:\n{0}")]
-    AtomicWriteIO(#[from] atomicwrites::Error<std::io::Error>),
-    #[error("Failed writing file:\n{0}")]
-    Json(#[from] atomicwrites::Error<serde_json::Error>),
+    #[error("Database error:\n{0}")]
+    Db(#[from] rusqlite::Error),
     #[error("IO error:\n{0}")]
     Io(#[from] std::io::Error),
 }
@@ -55,6 +53,31 @@ impl Job {
             status: JobStatus::Queued,
             submit_time: Utc::now(),
             sync_time: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_parts(
+        uuid: Uuid,
+        remote: String,
+        remote_id: String,
+        filename: String,
+        work_dir: PathBuf,
+        remote_dir: PathBuf,
+        status: JobStatus,
+        submit_time: DateTime<Utc>,
+        sync_time: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self {
+            uuid,
+            remote,
+            remote_id,
+            filename,
+            work_dir,
+            remote_dir,
+            status,
+            submit_time,
+            sync_time,
         }
     }
 
@@ -104,10 +127,6 @@ impl Job {
 
     pub fn set_status(&mut self, status: JobStatus) {
         self.status = status;
-    }
-
-    pub fn set_sync_time(&mut self, time: DateTime<Utc>) {
-        self.sync_time = Some(time);
     }
 }
 
