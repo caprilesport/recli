@@ -3,6 +3,7 @@ pub mod fetch;
 pub mod info;
 pub mod prune;
 pub mod pull;
+pub mod resubmit;
 pub mod status;
 pub mod submit;
 

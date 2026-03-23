@@ -52,6 +52,7 @@ struct Cli {
 enum Mode {
     Fetch(commands::fetch::Args),
     Submit(commands::submit::Args),
+    Resubmit(commands::resubmit::Args),
     Pull(commands::pull::Args),
     Status(commands::status::Args),
     Info(commands::info::Args),
@@ -119,6 +120,7 @@ fn main() -> color_eyre::Result<()> {
         Some(Mode::Completions { shell: _ }) => unreachable!(),
         Some(Mode::Fetch(args)) => commands::fetch::execute(args, ctx)?,
         Some(Mode::Submit(args)) => commands::submit::execute(args, ctx)?,
+        Some(Mode::Resubmit(args)) => commands::resubmit::execute(args, ctx)?,
         Some(Mode::Pull(args)) => commands::pull::execute(args, ctx)?,
         Some(Mode::Info(args)) => commands::info::execute(args, ctx)?,
         Some(Mode::Status(args)) => commands::status::execute(args, ctx)?,

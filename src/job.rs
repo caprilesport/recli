@@ -25,6 +25,9 @@ pub struct Job {
     remote: String,
     remote_id: String,
     filename: String,
+    script_file: String,
+    files_sent: Vec<PathBuf>,
+    tags: Vec<String>,
     work_dir: PathBuf,
     remote_dir: PathBuf,
     status: JobStatus,
@@ -38,6 +41,9 @@ impl Job {
         remote: String,
         remote_id: String,
         filename: String,
+        script_file: String,
+        files_sent: Vec<PathBuf>,
+        tags: Vec<String>,
         remote_dir: PathBuf,
         work_dir: PathBuf,
     ) -> Self {
@@ -46,6 +52,9 @@ impl Job {
             remote,
             remote_id,
             filename,
+            script_file,
+            files_sent,
+            tags,
             work_dir,
             remote_dir,
             status: JobStatus::Queued,
@@ -60,6 +69,9 @@ impl Job {
         remote: String,
         remote_id: String,
         filename: String,
+        script_file: String,
+        files_sent: Vec<PathBuf>,
+        tags: Vec<String>,
         work_dir: PathBuf,
         remote_dir: PathBuf,
         status: JobStatus,
@@ -71,6 +83,9 @@ impl Job {
             remote,
             remote_id,
             filename,
+            script_file,
+            files_sent,
+            tags,
             work_dir,
             remote_dir,
             status,
@@ -81,6 +96,18 @@ impl Job {
 
     pub fn uuid(&self) -> &Uuid {
         &self.uuid
+    }
+
+    pub fn script_file(&self) -> &str {
+        &self.script_file
+    }
+
+    pub fn files_sent(&self) -> &[PathBuf] {
+        &self.files_sent
+    }
+
+    pub fn tags(&self) -> &[String] {
+        &self.tags
     }
 
     pub fn short_id(&self) -> String {
@@ -168,6 +195,9 @@ mod tests {
         Job {
             uuid: Uuid::new_v4(),
             filename: "myjob".to_string(),
+            script_file: "/home/user/jobs/myjob.pbs".to_string(),
+            files_sent: vec![],
+            tags: vec![],
             remote: "babel".to_string(),
             remote_id: "12345.server".to_string(),
             remote_dir: PathBuf::from("/scratch/work/uuid"),
@@ -227,6 +257,9 @@ mod tests {
             "babel".to_string(),
             "99.server".to_string(),
             "myjob".to_string(),
+            "/home/user/jobs/myjob.pbs".to_string(),
+            vec![],
+            vec![],
             PathBuf::from("/home/user/jobs"),
             PathBuf::from("/scratch/work/uuid"),
             JobStatus::Finished,

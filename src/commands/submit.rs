@@ -30,6 +30,9 @@ pub struct Args {
     /// `file_strategy` in config)
     #[arg(long, value_enum)]
     strategy: Option<FileStrategy>,
+    /// Tags to attach to the submitted job(s)
+    #[arg(long, num_args = 1..)]
+    tags: Vec<String>,
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -111,11 +114,17 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         let remote_dir = remote.work_dir().join(id.to_string());
         let remote_id = remote.submit(&script_path, &companion_files, &connection, &remote_dir)?;
 
+        let mut files_sent = vec![script_path.clone()];
+        files_sent.extend_from_slice(&companion_files);
+
         let job = Job::new(
             id,
             remote.name().to_owned(),
             remote_id,
             file_stem.to_owned(),
+            script_path.to_string_lossy().to_string(),
+            files_sent,
+            args.tags.clone(),
             remote_dir,
             work_dir,
         );

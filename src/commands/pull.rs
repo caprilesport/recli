@@ -29,7 +29,7 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
         ctx.config.ignore.clear();
     }
 
-    if let Some(ref prefix) = args.job_id {
+    if let Some(prefix) = &args.job_id {
         // Extract remote name without keeping a borrow on jobs
         let remote_name = {
             let jobs = Jobs::load_from_db(&ctx.db_path)?;

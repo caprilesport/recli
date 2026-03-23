@@ -59,6 +59,10 @@ pub struct Args {
     /// Filter non synced jobs
     #[arg(long, action, default_value_t = false)]
     pub not_synced: bool,
+
+    /// Filter by tag
+    #[arg(long)]
+    pub tag: Option<String>,
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -74,7 +78,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     let mut query = jobs.query();
 
-    if let Some(ref prefix) = args.id {
+    if let Some(prefix) = &args.id {
         query = query.with_prefix(prefix);
     }
 
@@ -108,7 +112,14 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         query = query.synced(false);
     }
 
-    let jobs: Vec<&Job> = query.iter().collect();
+    let jobs: Vec<&Job> = if let Some(tag) = &args.tag {
+        query
+            .iter()
+            .filter(|j| j.tags().iter().any(|t| t == tag))
+            .collect()
+    } else {
+        query.iter().collect()
+    };
 
     if ctx.json {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
@@ -163,6 +174,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
         "Remote",
         "Submit time",
         "Sync time",
+        "Tags",
     ];
     if with_id {
         headers.push("Remote ID");
@@ -183,6 +195,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
             None => "─".to_string(),
         };
 
+        let tags = j.tags().join(", ");
         let mut row: Vec<Cell> = vec![
             Cell::new(&id),
             Cell::new(&work_dir),
@@ -191,6 +204,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
             Cell::new(j.remote()),
             Cell::new(&submit_time),
             Cell::new(&sync_time),
+            Cell::new(&tags),
         ];
         if with_id {
             row.push(Cell::new(j.remote_id()));

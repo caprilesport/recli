@@ -41,9 +41,9 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let days = args.days.unwrap_or(ctx.config.settings.prune_after_days);
     let cutoff = Utc::now() - Duration::days(i64::from(days));
 
-    let to_prune: Vec<crate::job::Job> = if let Some(ref prefix) = args.job {
+    let to_prune: Vec<crate::job::Job> = if let Some(prefix) = &args.job {
         let job = jobs.find_by_prefix(prefix)?;
-        if let Some(ref remote_filter) = args.remote {
+        if let Some(remote_filter) = &args.remote {
             if job.remote() != remote_filter {
                 return Err(color_eyre::eyre::eyre!(
                     "Job {} is on remote '{}', not '{}'",
@@ -56,7 +56,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         vec![job.clone()]
     } else {
         let mut query = jobs.query().synced(true);
-        if let Some(ref remote_filter) = args.remote {
+        if let Some(remote_filter) = &args.remote {
             query = query.with_remote(remote_filter);
         }
         query

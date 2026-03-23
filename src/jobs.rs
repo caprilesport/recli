@@ -45,10 +45,11 @@ fn open_db(path: &Path) -> Result<Connection, Error> {
              remote_id   TEXT,
              name        TEXT,
              script_file TEXT,
+             files_sent  TEXT,
+             tags        TEXT,
              work_dir    TEXT,
              remote_dir  TEXT,
              status      TEXT,
-             tags        TEXT,
              queue       TEXT,
              submit_time TEXT,
              sync_time   TEXT
@@ -86,22 +87,26 @@ impl Jobs {
     pub fn load_from_db(path: &Path) -> Result<Self, Error> {
         let conn = open_db(path)?;
         let mut stmt = conn.prepare(
-            "SELECT uuid, remote, remote_id, name, work_dir, remote_dir, status, submit_time, sync_time \
+            "SELECT uuid, remote, remote_id, name, script_file, files_sent, tags, \
+                    work_dir, remote_dir, status, submit_time, sync_time \
              FROM jobs ORDER BY submit_time",
         )?;
 
         let rows = stmt
             .query_map([], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,         // uuid
-                    row.get::<_, String>(1)?,         // remote
-                    row.get::<_, Option<String>>(2)?, // remote_id
-                    row.get::<_, Option<String>>(3)?, // name
-                    row.get::<_, Option<String>>(4)?, // work_dir
-                    row.get::<_, Option<String>>(5)?, // remote_dir
-                    row.get::<_, Option<String>>(6)?, // status
-                    row.get::<_, String>(7)?,         // submit_time
-                    row.get::<_, Option<String>>(8)?, // sync_time
+                    row.get::<_, String>(0)?,          // uuid
+                    row.get::<_, String>(1)?,          // remote
+                    row.get::<_, Option<String>>(2)?,  // remote_id
+                    row.get::<_, Option<String>>(3)?,  // name
+                    row.get::<_, Option<String>>(4)?,  // script_file
+                    row.get::<_, Option<String>>(5)?,  // files_sent (JSON)
+                    row.get::<_, Option<String>>(6)?,  // tags (JSON)
+                    row.get::<_, Option<String>>(7)?,  // work_dir
+                    row.get::<_, Option<String>>(8)?,  // remote_dir
+                    row.get::<_, Option<String>>(9)?,  // status
+                    row.get::<_, String>(10)?,         // submit_time
+                    row.get::<_, Option<String>>(11)?, // sync_time
                 ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
@@ -114,6 +119,9 @@ impl Jobs {
                     remote,
                     remote_id,
                     name,
+                    script_file,
+                    files_sent_json,
+                    tags_json,
                     work_dir,
                     remote_dir,
                     status_str,
@@ -142,11 +150,25 @@ impl Jobs {
                             })
                         })
                         .transpose()?;
+                    let files_sent: Vec<PathBuf> = files_sent_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect();
+                    let tags: Vec<String> = tags_json
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok())
+                        .unwrap_or_default();
                     Ok(Job::from_parts(
                         uuid,
                         remote,
                         remote_id.unwrap_or_default(),
                         name.unwrap_or_default(),
+                        script_file.unwrap_or_default(),
+                        files_sent,
+                        tags,
                         PathBuf::from(work_dir.unwrap_or_default()),
                         PathBuf::from(remote_dir.unwrap_or_default()),
                         parse_status(status_str.as_deref().unwrap_or("")),
@@ -170,15 +192,27 @@ impl Jobs {
     /// - If the INSERT statement fails
     pub fn insert_job(path: &Path, job: &Job) -> Result<(), Error> {
         let conn = open_db(path)?;
+        let files_sent_json = serde_json::to_string(
+            &job.files_sent()
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+        let tags_json = serde_json::to_string(job.tags()).unwrap_or_default();
         conn.execute(
             "INSERT INTO jobs \
-             (uuid, remote, remote_id, name, work_dir, remote_dir, status, submit_time, sync_time) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (uuid, remote, remote_id, name, script_file, files_sent, tags, \
+              work_dir, remote_dir, status, submit_time, sync_time) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 job.uuid().to_string(),
                 job.remote(),
                 job.remote_id(),
                 job.filename(),
+                job.script_file(),
+                files_sent_json,
+                tags_json,
                 job.work_dir().to_str().unwrap_or(""),
                 job.remote_dir().to_str().unwrap_or(""),
                 job.status().as_str(),
@@ -203,7 +237,7 @@ impl Jobs {
         Ok(())
     }
 
-    fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
+    pub fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(
             "UPDATE jobs SET status = ?1 WHERE uuid = ?2",
@@ -222,6 +256,77 @@ impl Jobs {
         conn.execute(
             "UPDATE jobs SET sync_time = ?1 WHERE uuid = ?2",
             params![sync_time.to_rfc3339(), uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_sync_time(&self, uuid: &Uuid) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET sync_time = NULL WHERE uuid = ?1",
+            params![uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_remote_dir(&self, uuid: &Uuid, remote_dir: &Path) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET remote_dir = ?1 WHERE uuid = ?2",
+            params![remote_dir.to_str().unwrap_or(""), uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_remote_id(&self, uuid: &Uuid, remote_id: &str) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET remote_id = ?1 WHERE uuid = ?2",
+            params![remote_id, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_remote(&self, uuid: &Uuid, remote: &str) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET remote = ?1 WHERE uuid = ?2",
+            params![remote, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_submit_time(&self, uuid: &Uuid, submit_time: DateTime<Utc>) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET submit_time = ?1 WHERE uuid = ?2",
+            params![submit_time.to_rfc3339(), uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_files_sent(&self, uuid: &Uuid, files: &[PathBuf]) -> Result<(), Error> {
+        let json = serde_json::to_string(
+            &files
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET files_sent = ?1 WHERE uuid = ?2",
+            params![json, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_tags(&self, uuid: &Uuid, tags: &[String]) -> Result<(), Error> {
+        let json = serde_json::to_string(tags).unwrap_or_default();
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET tags = ?1 WHERE uuid = ?2",
+            params![json, uuid.to_string()],
         )?;
         Ok(())
     }
@@ -366,6 +471,9 @@ mod tests {
             remote.to_string(),
             remote_id.to_string(),
             "myjob".to_string(),
+            String::new(),
+            vec![],
+            vec![],
             PathBuf::from("/home/user/jobs"),
             PathBuf::from("/remote/work/uuid"),
             status,
@@ -479,6 +587,9 @@ mod tests {
             "babel".to_string(),
             "1".to_string(),
             "job1".to_string(),
+            String::new(),
+            vec![],
+            vec![],
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Queued,
@@ -490,6 +601,9 @@ mod tests {
             "babel".to_string(),
             "2".to_string(),
             "job2".to_string(),
+            String::new(),
+            vec![],
+            vec![],
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Queued,
@@ -542,6 +656,9 @@ mod tests {
             "babel".to_string(),
             "2".to_string(),
             "myjob".to_string(),
+            String::new(),
+            vec![],
+            vec![],
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Finished,
@@ -567,6 +684,9 @@ mod tests {
             "babel".to_string(),
             "5".to_string(),
             "myjob".to_string(),
+            String::new(),
+            vec![],
+            vec![],
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Finished,
