@@ -321,6 +321,24 @@ impl Jobs {
         Ok(())
     }
 
+    pub fn update_work_dir(&self, uuid: &Uuid, work_dir: &Path) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET work_dir = ?1 WHERE uuid = ?2",
+            params![work_dir.to_str().unwrap_or(""), uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_script_file(&self, uuid: &Uuid, script_file: &str) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET script_file = ?1 WHERE uuid = ?2",
+            params![script_file, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn update_tags(&self, uuid: &Uuid, tags: &[String]) -> Result<(), Error> {
         let json = serde_json::to_string(tags).unwrap_or_default();
         let conn = open_db(&self.db_path)?;

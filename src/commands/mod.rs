@@ -4,6 +4,7 @@ pub mod info;
 pub mod prune;
 pub mod pull;
 pub mod resubmit;
+pub mod set;
 pub mod status;
 pub mod submit;
 
