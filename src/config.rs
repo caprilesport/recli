@@ -25,6 +25,94 @@ pub enum FileStrategy {
     Directory,
 }
 
+/// Columns available in the `recli status` table.
+/// Configured under `[display].columns` in `config.toml`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Column {
+    Id,
+    WorkDir,
+    Name,
+    Status,
+    Remote,
+    SubmitTime,
+    SyncTime,
+    Tags,
+}
+
+impl Column {
+    pub fn header(&self) -> &'static str {
+        match self {
+            Self::Id => "ID",
+            Self::WorkDir => "Work dir",
+            Self::Name => "Name",
+            Self::Status => "Status",
+            Self::Remote => "Remote",
+            Self::SubmitTime => "Submit time",
+            Self::SyncTime => "Sync time",
+            Self::Tags => "Tags",
+        }
+    }
+}
+
+fn default_path_components() -> usize {
+    3
+}
+fn default_datetime_format() -> String {
+    "%Y-%m-%d %H:%M".to_string()
+}
+fn default_status_window_hours() -> u32 {
+    48
+}
+fn default_max_tags() -> usize {
+    0
+}
+
+fn default_columns() -> Vec<Column> {
+    vec![
+        Column::Id,
+        Column::WorkDir,
+        Column::Name,
+        Column::Status,
+        Column::Remote,
+        Column::SubmitTime,
+        Column::SyncTime,
+        Column::Tags,
+    ]
+}
+
+/// Display settings for the status table, configured under `[display]` in `config.toml`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Display {
+    /// Number of trailing path components to show in Work dir (0 = full path).
+    #[serde(default = "default_path_components")]
+    pub path_components: usize,
+    /// strftime-style format string for datetime columns.
+    #[serde(default = "default_datetime_format")]
+    pub datetime_format: String,
+    /// Which columns to show and in what order.
+    #[serde(default = "default_columns")]
+    pub columns: Vec<Column>,
+    /// Hide synced jobs older than this many hours (0 = show all).
+    #[serde(default = "default_status_window_hours")]
+    pub status_window_hours: u32,
+    /// Maximum tags to display per job (0 = show all).
+    #[serde(default = "default_max_tags")]
+    pub max_tags: usize,
+}
+
+impl Default for Display {
+    fn default() -> Self {
+        Self {
+            path_components: default_path_components(),
+            datetime_format: default_datetime_format(),
+            columns: default_columns(),
+            status_window_hours: default_status_window_hours(),
+            max_tags: default_max_tags(),
+        }
+    }
+}
+
 fn default_prune_days() -> u32 {
     90
 }
@@ -55,6 +143,8 @@ pub struct Config {
     pub ignore: Vec<glob::Pattern>,
     #[serde(default)]
     pub settings: Settings,
+    #[serde(default)]
+    pub display: Display,
 }
 
 #[derive(thiserror::Error, std::fmt::Debug)]

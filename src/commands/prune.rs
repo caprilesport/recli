@@ -43,15 +43,15 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     let to_prune: Vec<crate::job::Job> = if let Some(prefix) = &args.job {
         let job = jobs.find_by_prefix(prefix)?;
-        if let Some(remote_filter) = &args.remote {
-            if job.remote() != remote_filter {
-                return Err(color_eyre::eyre::eyre!(
-                    "Job {} is on remote '{}', not '{}'",
-                    job.short_id(),
-                    job.remote(),
-                    remote_filter
-                ));
-            }
+        if let Some(remote_filter) = &args.remote
+            && job.remote() != remote_filter
+        {
+            return Err(color_eyre::eyre::eyre!(
+                "Job {} is on remote '{}', not '{}'",
+                job.short_id(),
+                job.remote(),
+                remote_filter
+            ));
         }
         vec![job.clone()]
     } else {

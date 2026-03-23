@@ -1,3 +1,4 @@
+use crate::config::{Column, Display};
 use crate::jobs::Jobs;
 use chrono::{Duration, Utc};
 use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
@@ -67,12 +68,13 @@ pub struct Args {
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
+    let display = &ctx.config.display;
     let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
 
-    if !args.all {
-        let two_days_ago = Utc::now() - Duration::hours(48);
+    if !args.all && display.status_window_hours > 0 {
+        let cutoff = Utc::now() - Duration::hours(i64::from(display.status_window_hours));
         jobs.retain(|j| {
-            !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| *st > two_days_ago))
+            !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| *st > cutoff))
         });
     }
 
@@ -128,32 +130,43 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     let mut stdout = std::io::stdout().lock();
     let is_tty = stdout.is_terminal();
-    let table = create_status_table(jobs, args.show_id, is_tty);
+    let table = create_status_table(jobs, args.show_id, is_tty, display);
     writeln!(stdout, "{table}")?;
 
     Ok(())
 }
 
-fn short_path(path: &std::path::Path) -> String {
-    let parts: Vec<_> = path.iter().collect();
-    if parts.len() <= 3 {
+fn short_path(path: &std::path::Path, n: usize) -> String {
+    if n == 0 {
         return path.to_string_lossy().to_string();
     }
-    let tail: std::path::PathBuf = parts[parts.len() - 3..].iter().collect();
+    let parts: Vec<_> = path.iter().collect();
+    if parts.len() <= n {
+        return path.to_string_lossy().to_string();
+    }
+    let tail: std::path::PathBuf = parts[parts.len() - n..].iter().collect();
     format!("…/{}", tail.display())
 }
 
-fn fmt_datetime(dt: &chrono::DateTime<chrono::Utc>, two_line: bool) -> String {
+fn fmt_datetime(dt: &chrono::DateTime<chrono::Utc>, two_line: bool, fmt: &str) -> String {
     let local = dt.with_timezone(&chrono::Local);
-    if two_line {
-        format!("{}\n{}", local.format("%Y-%m-%d"), local.format("%H:%M"))
-    } else {
-        local.format("%Y-%m-%d %H:%M").to_string()
+    let formatted = local.format(fmt).to_string();
+    if two_line && let Some(pos) = formatted.find(' ') {
+        return format!("{}\n{}", &formatted[..pos], &formatted[pos + 1..]);
     }
+    formatted
+}
+
+fn fmt_tags(tags: &[String], max_tags: usize) -> String {
+    if max_tags == 0 || tags.len() <= max_tags {
+        return tags.join(", ");
+    }
+    let remaining = tags.len() - max_tags;
+    format!("{}, +{remaining} more", tags[..max_tags].join(", "))
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
+fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool, display: &Display) -> Table {
     let mut table = Table::new();
 
     if is_tty {
@@ -166,16 +179,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
             .load_preset(comfy_table::presets::NOTHING);
     }
 
-    let mut headers = vec![
-        "ID",
-        "Work dir",
-        "Name",
-        "Status",
-        "Remote",
-        "Submit time",
-        "Sync time",
-        "Tags",
-    ];
+    let mut headers: Vec<&str> = display.columns.iter().map(Column::header).collect();
     if with_id {
         headers.push("Remote ID");
         headers.push("UUID");
@@ -183,29 +187,35 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool) -> Table {
     table.set_header(headers);
 
     for j in &jobs {
-        let id = j.short_id();
-        let work_dir = if is_tty {
-            short_path(j.work_dir())
-        } else {
-            j.work_dir().to_string_lossy().to_string()
-        };
-        let submit_time = fmt_datetime(j.submit_time(), is_tty);
-        let sync_time = match j.sync_time() {
-            Some(date) => fmt_datetime(date, is_tty),
-            None => "─".to_string(),
-        };
+        let mut row: Vec<Cell> = display
+            .columns
+            .iter()
+            .map(|col| match col {
+                Column::Id => Cell::new(j.short_id()),
+                Column::WorkDir => {
+                    let path = if is_tty {
+                        short_path(j.work_dir(), display.path_components)
+                    } else {
+                        j.work_dir().to_string_lossy().to_string()
+                    };
+                    Cell::new(path)
+                }
+                Column::Name => Cell::new(j.filename()),
+                Column::Status => super::status_cell(*j.status(), is_tty),
+                Column::Remote => Cell::new(j.remote()),
+                Column::SubmitTime => Cell::new(fmt_datetime(
+                    j.submit_time(),
+                    is_tty,
+                    &display.datetime_format,
+                )),
+                Column::SyncTime => Cell::new(match j.sync_time() {
+                    Some(dt) => fmt_datetime(dt, is_tty, &display.datetime_format),
+                    None => "─".to_string(),
+                }),
+                Column::Tags => Cell::new(fmt_tags(j.tags(), display.max_tags)),
+            })
+            .collect();
 
-        let tags = j.tags().join(", ");
-        let mut row: Vec<Cell> = vec![
-            Cell::new(&id),
-            Cell::new(&work_dir),
-            Cell::new(j.filename()),
-            super::status_cell(*j.status(), is_tty),
-            Cell::new(j.remote()),
-            Cell::new(&submit_time),
-            Cell::new(&sync_time),
-            Cell::new(&tags),
-        ];
         if with_id {
             row.push(Cell::new(j.remote_id()));
             row.push(Cell::new(j.uuid().to_string()));
