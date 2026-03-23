@@ -1,6 +1,7 @@
 pub mod cancel;
 pub mod fetch;
 pub mod info;
+pub mod log;
 pub mod prune;
 pub mod pull;
 pub mod resubmit;

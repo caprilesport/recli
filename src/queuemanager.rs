@@ -140,6 +140,54 @@ impl QueueManager {
         }
     }
 
+    /// Returns a list of (label, command) pairs that together produce the job log output.
+    ///
+    /// Each pair represents a named section (e.g. "stdout", "stderr") and the shell
+    /// command to retrieve it. Sections that produce no output or error are silently skipped.
+    pub fn log_commands(
+        &self,
+        remote_dir: &Path,
+        remote_id: &str,
+        job_name: &str,
+    ) -> Vec<(String, String)> {
+        match self {
+            Self::Pbs => {
+                // PBS IDs are like "12345.server"; filenames use only the numeric part.
+                let short_id = remote_id.split('.').next().unwrap_or(remote_id);
+                let stdout = shell_quote(&format!(
+                    "{}/{}.o{short_id}",
+                    remote_dir.display(),
+                    job_name
+                ));
+                let stderr = shell_quote(&format!(
+                    "{}/{}.e{short_id}",
+                    remote_dir.display(),
+                    job_name
+                ));
+                vec![
+                    ("stdout".to_string(), format!("cat {stdout}")),
+                    ("stderr".to_string(), format!("cat {stderr}")),
+                ]
+            }
+            Self::Slurm => {
+                let stdout =
+                    shell_quote(&format!("{}/slurm.{remote_id}.out", remote_dir.display()));
+                let stderr =
+                    shell_quote(&format!("{}/slurm.{remote_id}.err", remote_dir.display()));
+                vec![
+                    ("stdout".to_string(), format!("cat {stdout}")),
+                    ("stderr".to_string(), format!("cat {stderr}")),
+                ]
+            }
+            Self::Pueue => {
+                vec![(
+                    "log".to_string(),
+                    format!("pueue log {}", shell_quote(remote_id)),
+                )]
+            }
+        }
+    }
+
     /// Returns the command to cancel a job in the queue.
     pub fn cancel_command(&self, remote_id: &str) -> String {
         let remote_id = shell_quote(remote_id);

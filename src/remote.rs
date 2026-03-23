@@ -103,6 +103,23 @@ impl Remote {
         Ok(remote_id)
     }
 
+    /// Fetches log sections for a job, returning (label, output) pairs.
+    ///
+    /// Sections that fail (e.g. file not found) are silently skipped.
+    pub fn logs(
+        &self,
+        remote_dir: &Path,
+        remote_id: &str,
+        job_name: &str,
+        connection: &dyn RemoteConnection,
+    ) -> Vec<(String, String)> {
+        self.queue_manager
+            .log_commands(remote_dir, remote_id, job_name)
+            .into_iter()
+            .filter_map(|(label, cmd)| connection.execute(&cmd).ok().map(|output| (label, output)))
+            .collect()
+    }
+
     /// Cancels a job on the remote queue manager.
     ///
     /// # Errors
