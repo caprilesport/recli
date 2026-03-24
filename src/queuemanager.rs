@@ -254,7 +254,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12348.server    testuser  big     error.job  11111*   1  16   30gb 10000 E 001:0
 12349.server    testuser  big     weird.job  22222*   1  16   30gb 10000 X 000:0
 "#;
-        let statuses = QueueManager::Pbs.status(&pbs_output);
+        let statuses = QueueManager::Pbs.status(pbs_output);
         let mut expected = HashMap::new();
         expected.insert("12345.server".to_string(), JobStatus::Queued);
         expected.insert("12346.server".to_string(), JobStatus::Running);
@@ -280,7 +280,7 @@ Group "default" (1 parallel): running
  0    Running   /home/vport/projects/scripts/job -v 5 init.inp   /home/vport/projects/calculations/9d90ca4e-72bb-4974-8c23-6a182791e216   12:47:13
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 "#;
-        let statuses = QueueManager::Pueue.status(&pueue_output);
+        let statuses = QueueManager::Pueue.status(pueue_output);
         let mut expected = HashMap::new();
         expected.insert("0".to_string(), JobStatus::Running);
 
@@ -302,7 +302,7 @@ Group "default" (4 parallel): running
  4    Killed    /home/user/scripts/job -v 5 kill.inp             /remote/work/uuid-e                                                      09:00:00   09:00:30
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 "#;
-        let statuses = QueueManager::Pueue.status(&pueue_output);
+        let statuses = QueueManager::Pueue.status(pueue_output);
         let mut expected = HashMap::new();
         expected.insert("0".to_string(), JobStatus::Running);
         expected.insert("1".to_string(), JobStatus::Queued);
@@ -332,7 +332,7 @@ Group "default" (4 parallel): running
        12350  nodefail     compute     grpname  NODE_FAIL
        12351  unknownjob   compute     grpname   WHATEVER
 "#;
-        let statuses = QueueManager::Slurm.status(&slurm_output);
+        let statuses = QueueManager::Slurm.status(slurm_output);
         let mut expected = HashMap::new();
         expected.insert("12345".to_string(), JobStatus::Finished);
         expected.insert("12346".to_string(), JobStatus::Running);
