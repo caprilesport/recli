@@ -223,11 +223,6 @@ impl Jobs {
         Ok(())
     }
 
-    /// Deletes a job from the database by UUID.
-    ///
-    /// # Errors
-    /// - If the database cannot be opened
-    /// - If the DELETE statement fails
     pub fn delete_job(path: &Path, uuid: &Uuid) -> Result<(), Error> {
         let conn = open_db(path)?;
         conn.execute(
@@ -246,11 +241,6 @@ impl Jobs {
         Ok(())
     }
 
-    /// Updates the sync time for a job in the database.
-    ///
-    /// # Errors
-    /// - If the database cannot be opened
-    /// - If the UPDATE statement fails
     pub fn update_sync_time(&self, uuid: &Uuid, sync_time: DateTime<Utc>) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(

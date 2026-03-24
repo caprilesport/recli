@@ -159,9 +159,9 @@ impl Job {
 /// Abstraction on status for all the supported `QueueManagers`.
 ///
 /// Relevant documentation can be found here:
-/// [Slurm](https://slurm.schedmd.com/job_state_codes.html)
-/// [PBS](https://www.unisq.edu.au/-/media/usq/current-students/academic/research/conducting-research/eresearch-services/hpc/pbs-documentation_may17.ashx?la=en&hash=a8ba909a56c14aea7de6a4876ea9b30e)
-/// [Pueue](https://github.com/Nukesor/pueue/blob/21c6b928d0728439cf708b4fb58acca5effc1a25/pueue_lib/src/task.rs#L11)
+/// [`Slurm`](https://slurm.schedmd.com/job_state_codes.html)
+/// [`PBS`](https://www.unisq.edu.au/-/media/usq/current-students/academic/research/conducting-research/eresearch-services/hpc/pbs-documentation_may17.ashx?la=en&hash=a8ba909a56c14aea7de6a4876ea9b30e)
+/// [`Pueue`](https://github.com/Nukesor/pueue/blob/21c6b928d0728439cf708b4fb58acca5effc1a25/pueue_lib/src/task.rs#L11)
 ///
 /// The `Undefined` variant is reserved for all status that are encountered and are not defined here. This may happen mainly with different PBS versions and some status for SLURM that are currently not implemented.
 // TODO: complete this with all possible variants encoutered in the Queue managers we support.

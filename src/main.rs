@@ -33,8 +33,8 @@ mod remote;
 #[command(author, version, long_version = Bosion::LONG_VERSION, styles = STYLES, about = "A remote job submission and management CLI.")]
 #[command(
     long_about = "recli is a tool designed to simplify the process of submitting,
-    monitoring, and retrieving files from jobs running on remote high-performance
-    computing (HPC) clusters or servers."
+monitoring, and retrieving files from jobs running on remote high-performance
+computing (HPC) clusters or servers."
 )]
 #[command(propagate_version = true)]
 struct Cli {

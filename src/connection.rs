@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{debug, trace};
 
+// TODO: this looks like a config setting
 const CONNECTION_TIMEOUT: u32 = 9000;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
