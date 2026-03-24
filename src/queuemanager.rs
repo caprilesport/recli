@@ -205,6 +205,18 @@ impl QueueManager {
         }
     }
 
+    /// Returns the command to view the full queue (all users, unfiltered).
+    ///
+    /// Intended for `recli queue` — a human-facing snapshot of what is running,
+    /// not for parsing job statuses.
+    pub fn queue_command(&self) -> &'static str {
+        match self {
+            Self::Pbs => "qstat",
+            Self::Slurm => "squeue",
+            Self::Pueue => "pueue status",
+        }
+    }
+
     /// Returns the command to submit a job to the queue.
     ///
     /// Constructs the appropriate submission command for the queue manager,

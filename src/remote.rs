@@ -29,6 +29,8 @@ pub struct Remote {
     work_directory: PathBuf,
     queue_manager: QueueManager,
     identity_file: Option<PathBuf>,
+    #[serde(default)]
+    check_queue: bool,
 }
 
 impl PartialEq<&str> for Remote {
@@ -67,6 +69,10 @@ impl Remote {
 
     pub fn queue_manager(&self) -> &QueueManager {
         &self.queue_manager
+    }
+
+    pub fn check_queue(&self) -> bool {
+        self.check_queue
     }
 
     /// Submits a job to the remote queue manager.
@@ -226,6 +232,7 @@ mod tests {
             port: 22,
             user: "testuser".to_string(),
             work_directory: PathBuf::from("/remote/work"),
+            check_queue: false,
             queue_manager: QueueManager::Pbs,
             identity_file: None,
         }
