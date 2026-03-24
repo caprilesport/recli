@@ -3,7 +3,7 @@ use crate::connection::SshConnection;
 use crate::job::{Job, JobStatus};
 use crate::jobs::Jobs;
 use chrono::Utc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tracing::{error, info};
 
@@ -36,8 +36,42 @@ pub struct Args {
     tags: Vec<String>,
 }
 
+fn resolve_companion_files(
+    strategy: &FileStrategy,
+    work_dir: &Path,
+    script_path: &Path,
+    file_stem: &str,
+    ignore: &[glob::Pattern],
+) -> std::io::Result<Vec<PathBuf>> {
+    match strategy {
+        FileStrategy::Script => Ok(vec![]),
+        FileStrategy::Basename => Ok(work_dir
+            .read_dir()?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p != script_path)
+            .filter(|p| {
+                p.file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|n| n.starts_with(file_stem))
+            })
+            .collect()),
+        FileStrategy::Directory => Ok(work_dir
+            .read_dir()?
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p != script_path)
+            .filter(|p| {
+                let name = p.file_name().and_then(std::ffi::OsStr::to_str);
+                !ignore
+                    .iter()
+                    .any(|pat| name.is_some_and(|n| pat.matches(n)))
+            })
+            .collect()),
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)]
-#[allow(clippy::too_many_lines)]
 pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let remote = ctx.config.get_remote(&args.remote)?;
     let strategy = args
@@ -88,33 +122,13 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         let directives = remote.queue_manager().parse_directives(&content);
         let job_name = directives.name.as_deref().unwrap_or(file_stem);
 
-        let mut companion_files: Vec<PathBuf> = match &strategy {
-            FileStrategy::Script => vec![],
-            FileStrategy::Basename => work_dir
-                .read_dir()?
-                .filter_map(Result::ok)
-                .map(|e| e.path())
-                .filter(|p| p.is_file() && p != &script_path)
-                .filter(|p| {
-                    p.file_name()
-                        .and_then(std::ffi::OsStr::to_str)
-                        .is_some_and(|n| n.starts_with(file_stem))
-                })
-                .collect(),
-            FileStrategy::Directory => work_dir
-                .read_dir()?
-                .filter_map(Result::ok)
-                .map(|e| e.path())
-                .filter(|p| p.is_file() && p != &script_path)
-                .filter(|p| {
-                    let name = p.file_name().and_then(std::ffi::OsStr::to_str);
-                    !ctx.config
-                        .ignore
-                        .iter()
-                        .any(|pat| name.is_some_and(|n| pat.matches(n)))
-                })
-                .collect(),
-        };
+        let mut companion_files = resolve_companion_files(
+            &strategy,
+            &work_dir,
+            &script_path,
+            file_stem,
+            &ctx.config.ignore,
+        )?;
         companion_files.extend_from_slice(&shared_files);
 
         let remote_dir = remote.work_dir().join(id.to_string());
