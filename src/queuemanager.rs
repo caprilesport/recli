@@ -148,21 +148,22 @@ impl QueueManager {
         &self,
         remote_dir: &Path,
         remote_id: &str,
-        job_name: &str,
+        script_file: &Path,
     ) -> Vec<(String, String)> {
         match self {
             Self::Pbs => {
                 // PBS IDs are like "12345.server"; filenames use only the numeric part.
                 let short_id = remote_id.split('.').next().unwrap_or(remote_id);
+                let script_name = script_file.file_name().unwrap_or_default().display();
                 let stdout = shell_quote(&format!(
                     "{}/{}.o{short_id}",
                     remote_dir.display(),
-                    job_name
+                    script_name
                 ));
                 let stderr = shell_quote(&format!(
                     "{}/{}.e{short_id}",
                     remote_dir.display(),
-                    job_name
+                    script_name
                 ));
                 vec![
                     ("stdout".to_string(), format!("cat {stdout}")),

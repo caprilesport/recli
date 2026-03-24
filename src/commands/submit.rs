@@ -122,7 +122,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             remote.name().to_owned(),
             remote_id,
             file_stem.to_owned(),
-            script_path.to_string_lossy().to_string(),
+            script_path,
             files_sent,
             args.tags.clone(),
             remote_dir,

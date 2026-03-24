@@ -2,6 +2,8 @@ use crate::connection::{RemoteConnection, SshConnection};
 use crate::jobs::Jobs;
 use std::io::{IsTerminal, Write};
 
+use tracing::info;
+
 /// Shows the log output of a job from its remote directory.
 ///
 /// Each queue manager has a default log location: PBS uses <name>.o<id> and
@@ -63,13 +65,13 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         remote.logs(
             job.remote_dir(),
             job.remote_id(),
-            job.filename(),
+            job.script_file(),
             &connection,
         )
     };
 
     if sections.is_empty() {
-        eprintln!("No log output found for job {}.", job.short_id());
+        info!("No log output found for job {}.", job.short_id());
         return Ok(());
     }
 

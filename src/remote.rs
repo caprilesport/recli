@@ -110,11 +110,11 @@ impl Remote {
         &self,
         remote_dir: &Path,
         remote_id: &str,
-        job_name: &str,
+        script_file: &Path,
         connection: &dyn RemoteConnection,
     ) -> Vec<(String, String)> {
         self.queue_manager
-            .log_commands(remote_dir, remote_id, job_name)
+            .log_commands(remote_dir, remote_id, script_file)
             .into_iter()
             .filter_map(|(label, cmd)| connection.execute(&cmd).ok().map(|output| (label, output)))
             .collect()

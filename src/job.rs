@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
@@ -25,7 +25,7 @@ pub struct Job {
     remote: String,
     remote_id: String,
     filename: String,
-    script_file: String,
+    script_file: PathBuf,
     files_sent: Vec<PathBuf>,
     tags: Vec<String>,
     work_dir: PathBuf,
@@ -42,7 +42,7 @@ impl Job {
         remote: String,
         remote_id: String,
         filename: String,
-        script_file: String,
+        script_file: PathBuf,
         files_sent: Vec<PathBuf>,
         tags: Vec<String>,
         remote_dir: PathBuf,
@@ -70,7 +70,7 @@ impl Job {
         remote: String,
         remote_id: String,
         filename: String,
-        script_file: String,
+        script_file: PathBuf,
         files_sent: Vec<PathBuf>,
         tags: Vec<String>,
         work_dir: PathBuf,
@@ -99,7 +99,7 @@ impl Job {
         &self.uuid
     }
 
-    pub fn script_file(&self) -> &str {
+    pub fn script_file(&self) -> &Path {
         &self.script_file
     }
 
@@ -196,7 +196,7 @@ mod tests {
         Job {
             uuid: Uuid::new_v4(),
             filename: "myjob".to_string(),
-            script_file: "/home/user/jobs/myjob.pbs".to_string(),
+            script_file: PathBuf::from("/home/user/jobs/myjob.pbs"),
             files_sent: vec![],
             tags: vec![],
             remote: "babel".to_string(),
@@ -258,7 +258,7 @@ mod tests {
             "babel".to_string(),
             "99.server".to_string(),
             "myjob".to_string(),
-            "/home/user/jobs/myjob.pbs".to_string(),
+            PathBuf::from("/home/user/jobs/myjob.pbs"),
             vec![],
             vec![],
             PathBuf::from("/home/user/jobs"),
