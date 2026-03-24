@@ -88,7 +88,7 @@ impl Jobs {
         let conn = open_db(path)?;
         let mut stmt = conn.prepare(
             "SELECT uuid, remote, remote_id, name, script_file, files_sent, tags, \
-                    work_dir, remote_dir, status, submit_time, sync_time \
+                    work_dir, remote_dir, status, queue, submit_time, sync_time \
              FROM jobs ORDER BY submit_time",
         )?;
 
@@ -105,8 +105,9 @@ impl Jobs {
                     row.get::<_, Option<String>>(7)?,  // work_dir
                     row.get::<_, Option<String>>(8)?,  // remote_dir
                     row.get::<_, Option<String>>(9)?,  // status
-                    row.get::<_, String>(10)?,         // submit_time
-                    row.get::<_, Option<String>>(11)?, // sync_time
+                    row.get::<_, Option<String>>(10)?, // queue
+                    row.get::<_, String>(11)?,         // submit_time
+                    row.get::<_, Option<String>>(12)?, // sync_time
                 ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
@@ -125,6 +126,7 @@ impl Jobs {
                     work_dir,
                     remote_dir,
                     status_str,
+                    queue,
                     submit_time_str,
                     sync_time_str,
                 )| {
@@ -169,6 +171,7 @@ impl Jobs {
                         PathBuf::from(script_file.unwrap_or_default()),
                         files_sent,
                         tags,
+                        queue,
                         PathBuf::from(work_dir.unwrap_or_default()),
                         PathBuf::from(remote_dir.unwrap_or_default()),
                         parse_status(status_str.as_deref().unwrap_or("")),
@@ -203,8 +206,8 @@ impl Jobs {
         conn.execute(
             "INSERT INTO jobs \
              (uuid, remote, remote_id, name, script_file, files_sent, tags, \
-              work_dir, remote_dir, status, submit_time, sync_time) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+              work_dir, remote_dir, status, queue, submit_time, sync_time) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 job.uuid().to_string(),
                 job.remote(),
@@ -216,6 +219,7 @@ impl Jobs {
                 job.work_dir().to_str().unwrap_or(""),
                 job.remote_dir().to_str().unwrap_or(""),
                 job.status().as_str(),
+                job.queue(),
                 job.submit_time().to_rfc3339(),
                 job.sync_time().map(DateTime::to_rfc3339),
             ],
@@ -335,6 +339,24 @@ impl Jobs {
         conn.execute(
             "UPDATE jobs SET tags = ?1 WHERE uuid = ?2",
             params![json, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_queue(&self, uuid: &Uuid, queue: Option<&str>) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET queue = ?1 WHERE uuid = ?2",
+            params![queue, uuid.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_name(&self, uuid: &Uuid, name: &str) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET name = ?1 WHERE uuid = ?2",
+            params![name, uuid.to_string()],
         )?;
         Ok(())
     }
@@ -482,6 +504,7 @@ mod tests {
             PathBuf::from("myjob.job"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/home/user/jobs"),
             PathBuf::from("/remote/work/uuid"),
             status,
@@ -613,6 +636,7 @@ mod tests {
             PathBuf::from("myjob.job"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Queued,
@@ -668,6 +692,7 @@ mod tests {
             PathBuf::from("myjob.job"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Finished,
@@ -696,6 +721,7 @@ mod tests {
             PathBuf::from("myjob.job"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Finished,
@@ -736,6 +762,8 @@ pub struct JobQuery<'a> {
     remote: Option<&'a str>,
     filename: Option<&'a str>,
     directory: Option<&'a str>,
+    queue: Option<&'a str>,
+    script: Option<&'a str>,
     submit_time_after: Option<DateTime<Utc>>,
     sync_time_after: Option<DateTime<Utc>>,
 }
@@ -752,6 +780,8 @@ impl<'a> JobQuery<'a> {
             remote_id: None,
             filename: None,
             directory: None,
+            queue: None,
+            script: None,
             submit_time_after: None,
             sync_time_after: None,
         }
@@ -797,6 +827,16 @@ impl<'a> JobQuery<'a> {
         self
     }
 
+    pub fn with_queue(mut self, queue: &'a str) -> Self {
+        self.queue = Some(queue);
+        self
+    }
+
+    pub fn with_script(mut self, script: &'a str) -> Self {
+        self.script = Some(script);
+        self
+    }
+
     /// Executes the query and returns an iterator over matching jobs.
     ///
     /// Applies all configured filters and returns an iterator that yields references to
@@ -819,6 +859,8 @@ impl<'a> JobQuery<'a> {
             remote,
             filename,
             directory,
+            queue,
+            script,
             submit_time_after,
             sync_time_after,
         } = self;
@@ -833,6 +875,9 @@ impl<'a> JobQuery<'a> {
             let name_match = filename.is_none_or(|f| job.filename().contains(f));
             let dir_match =
                 directory.is_none_or(|d| job.work_dir().to_str().is_some_and(|s| s.contains(d)));
+            let queue_match = queue.is_none_or(|q| job.queue().is_some_and(|jq| jq == q));
+            let script_match =
+                script.is_none_or(|s| job.script_file().to_str().is_some_and(|p| p.contains(s)));
             let submit_time_match = submit_time_after.is_none_or(|t| *job.submit_time() > t);
             let sync_time_match =
                 sync_time_after.is_none_or(|t| job.sync_time().is_some_and(|st| *st > t));
@@ -845,6 +890,8 @@ impl<'a> JobQuery<'a> {
                 && remote_match
                 && name_match
                 && dir_match
+                && queue_match
+                && script_match
                 && submit_time_match
                 && sync_time_match
         })

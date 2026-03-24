@@ -16,6 +16,12 @@ pub enum QueueManager {
     Pueue,
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct ScriptDirectives {
+    pub name: Option<String>,
+    pub queue: Option<String>,
+}
+
 impl QueueManager {
     /// Extracts the job ID from queue manager output.
     ///
@@ -216,6 +222,56 @@ impl QueueManager {
             Self::Slurm => format!("cd {remote_dir} && sbatch {job_name}"),
         }
     }
+
+    /// Parses job name and queue from a script's header directives.
+    ///
+    /// Returns `ScriptDirectives::default()` (all `None`) if the queue manager
+    /// does not use script headers (Pueue) or if the relevant directives are absent.
+    pub fn parse_directives(&self, content: &str) -> ScriptDirectives {
+        match self {
+            Self::Pbs => {
+                let mut name = None;
+                let mut queue = None;
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.starts_with("#PBS") {
+                        continue;
+                    }
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    match parts.as_slice() {
+                        [_, "-q", q, ..] => queue = Some((*q).to_string()),
+                        [_, "-N", n, ..] => name = Some((*n).to_string()),
+                        _ => {}
+                    }
+                }
+                ScriptDirectives { name, queue }
+            }
+            Self::Slurm => {
+                let mut name = None;
+                let mut queue = None;
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.starts_with("#SBATCH") {
+                        continue;
+                    }
+                    let rest = line["#SBATCH".len()..].trim();
+                    if let Some(val) = rest
+                        .strip_prefix("-J ")
+                        .or_else(|| rest.strip_prefix("--job-name="))
+                    {
+                        name = Some(val.trim().to_string());
+                    } else if let Some(val) = rest
+                        .strip_prefix("-p ")
+                        .or_else(|| rest.strip_prefix("--partition="))
+                    {
+                        queue = Some(val.trim().to_string());
+                    }
+                }
+                ScriptDirectives { name, queue }
+            }
+            Self::Pueue => ScriptDirectives::default(),
+        }
+    }
 }
 
 /// Wraps a string in single quotes for safe shell interpolation.
@@ -367,6 +423,54 @@ Group "default" (4 parallel): running
             QueueManager::Pueue.submit_command(dir_with_spaces, script_with_quote),
             "pueue add --working-directory '/remote/my jobs/uuid-1' -- ./'it'\\''s a job.pbs'"
         );
+    }
+
+    #[test]
+    fn test_parse_pbs_directives() {
+        let script = "#!/bin/bash\n#PBS -l nodes=1:ppn=8\n#PBS -l walltime=720:00:00\n#PBS -l mem=11gb\n#PBS -V\n#PBS -q small\n#PBS -N myjobname\n";
+        let d = QueueManager::Pbs.parse_directives(script);
+        assert_eq!(d.queue, Some("small".to_string()));
+        assert_eq!(d.name, Some("myjobname".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pbs_no_directives() {
+        let script = "#!/bin/bash\n#PBS -l nodes=1:ppn=8\n#PBS -V\n";
+        let d = QueueManager::Pbs.parse_directives(script);
+        assert_eq!(d.queue, None);
+        assert_eq!(d.name, None);
+    }
+
+    #[test]
+    fn test_parse_pbs_empty_queue_value() {
+        // "#PBS -q" with no value should not produce Some("") — stays None
+        let script = "#!/bin/bash\n#PBS -q\n#PBS -N myjob\n";
+        let d = QueueManager::Pbs.parse_directives(script);
+        assert_eq!(d.queue, None);
+        assert_eq!(d.name, Some("myjob".to_string()));
+    }
+
+    #[test]
+    fn test_parse_slurm_directives() {
+        let script = "#!/bin/bash\n#SBATCH -J slurm_job\n#SBATCH -p compute\n#SBATCH --ntasks=4\n";
+        let d = QueueManager::Slurm.parse_directives(script);
+        assert_eq!(d.name, Some("slurm_job".to_string()));
+        assert_eq!(d.queue, Some("compute".to_string()));
+    }
+
+    #[test]
+    fn test_parse_slurm_long_flags() {
+        let script = "#!/bin/bash\n#SBATCH --job-name=long_name\n#SBATCH --partition=gpu\n";
+        let d = QueueManager::Slurm.parse_directives(script);
+        assert_eq!(d.name, Some("long_name".to_string()));
+        assert_eq!(d.queue, Some("gpu".to_string()));
+    }
+
+    #[test]
+    fn test_parse_pueue_directives_always_empty() {
+        let script = "#!/bin/bash\n#PBS -q small\n#SBATCH -J name\n";
+        let d = QueueManager::Pueue.parse_directives(script);
+        assert_eq!(d, ScriptDirectives::default());
     }
 
     #[test]

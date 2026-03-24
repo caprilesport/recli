@@ -52,6 +52,16 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         .cloned()
         .collect();
 
+    // Re-parse directives — the script may have been edited before resubmitting.
+    let content = std::fs::read_to_string(&script_path).unwrap_or_default();
+    let directives = remote.queue_manager().parse_directives(&content);
+    let file_stem = script_path
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or(job.filename())
+        .to_owned();
+    let job_name = directives.name.unwrap_or(file_stem);
+
     let remote_id = remote.submit(&script_path, &extra_files, &connection, &remote_dir)?;
 
     // Collect what was sent (script + extra, same as submit does)
@@ -60,12 +70,14 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     let uuid = *job.uuid();
 
-    // Always update: new remote_id, reset status and timestamps
+    // Always update: new remote_id, reset status and timestamps, refresh parsed fields
     jobs.update_remote_id(&uuid, &remote_id)?;
     jobs.update_submit_time(&uuid, Utc::now())?;
     jobs.update_job_status(&uuid, JobStatus::Queued)?;
     jobs.clear_sync_time(&uuid)?;
     jobs.update_files_sent(&uuid, &files_sent)?;
+    jobs.update_name(&uuid, &job_name)?;
+    jobs.update_queue(&uuid, directives.queue.as_deref())?;
 
     if cross_remote {
         jobs.update_remote(&uuid, target_remote_name)?;

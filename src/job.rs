@@ -28,6 +28,7 @@ pub struct Job {
     script_file: PathBuf,
     files_sent: Vec<PathBuf>,
     tags: Vec<String>,
+    queue: Option<String>,
     work_dir: PathBuf,
     remote_dir: PathBuf,
     status: JobStatus,
@@ -60,6 +61,7 @@ impl Job {
             script_file,
             files_sent,
             tags,
+            queue,
             work_dir,
             remote_dir,
             status,
@@ -82,6 +84,10 @@ impl Job {
 
     pub fn tags(&self) -> &[String] {
         &self.tags
+    }
+
+    pub fn queue(&self) -> Option<&str> {
+        self.queue.as_deref()
     }
 
     pub fn short_id(&self) -> String {
@@ -172,6 +178,7 @@ mod tests {
             script_file: PathBuf::from("/home/user/jobs/myjob.pbs"),
             files_sent: vec![],
             tags: vec![],
+            queue: None,
             remote: "babel".to_string(),
             remote_id: "12345.server".to_string(),
             remote_dir: PathBuf::from("/scratch/work/uuid"),
@@ -234,6 +241,7 @@ mod tests {
             PathBuf::from("/home/user/jobs/myjob.pbs"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/home/user/jobs"),
             PathBuf::from("/scratch/work/uuid"),
             JobStatus::Finished,

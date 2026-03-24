@@ -65,10 +65,9 @@ impl Remote {
         self.identity_file.clone()
     }
 
-    // #[cfg(test)]
-    // pub fn queue_manager(&self) -> &QueueManager {
-    //     &self.queue_manager
-    // }
+    pub fn queue_manager(&self) -> &QueueManager {
+        &self.queue_manager
+    }
 
     /// Submits a job to the remote queue manager.
     ///

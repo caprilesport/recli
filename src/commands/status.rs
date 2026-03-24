@@ -64,6 +64,14 @@ pub struct Args {
     /// Filter by tag
     #[arg(long)]
     pub tag: Option<String>,
+
+    /// Filter by queue
+    #[arg(long, short)]
+    pub queue: Option<String>,
+
+    /// Filter by script name (substring match)
+    #[arg(long)]
+    pub script: Option<String>,
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -112,6 +120,14 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         query = query.synced(true);
     } else if args.not_synced {
         query = query.synced(false);
+    }
+
+    if let Some(queue) = &args.queue {
+        query = query.with_queue(queue);
+    }
+
+    if let Some(script) = &args.script {
+        query = query.with_script(script);
     }
 
     let jobs: Vec<&Job> = if let Some(tag) = &args.tag {
@@ -203,6 +219,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool, display: &D
                 Column::Name => Cell::new(j.filename()),
                 Column::Status => super::status_cell(*j.status(), is_tty),
                 Column::Remote => Cell::new(j.remote()),
+                Column::Queue => Cell::new(j.queue().unwrap_or("─")),
                 Column::SubmitTime => Cell::new(fmt_datetime(
                     j.submit_time(),
                     is_tty,

@@ -37,6 +37,7 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::too_many_lines)]
 pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let remote = ctx.config.get_remote(&args.remote)?;
     let strategy = args
@@ -83,6 +84,10 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
                 )
             })?;
 
+        let content = std::fs::read_to_string(&script_path).unwrap_or_default();
+        let directives = remote.queue_manager().parse_directives(&content);
+        let job_name = directives.name.as_deref().unwrap_or(file_stem);
+
         let mut companion_files: Vec<PathBuf> = match &strategy {
             FileStrategy::Script => vec![],
             FileStrategy::Basename => work_dir
@@ -122,11 +127,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             id,
             remote.name().to_owned(),
             remote_id,
-            file_stem.to_owned(),
+            job_name.to_owned(),
             script_path,
             files_sent,
             args.tags.clone(),
-            remote_dir,
+            directives.queue,
             work_dir,
             remote_dir,
             JobStatus::Queued,
