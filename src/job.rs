@@ -45,34 +45,7 @@ impl Job {
         script_file: PathBuf,
         files_sent: Vec<PathBuf>,
         tags: Vec<String>,
-        remote_dir: PathBuf,
-        work_dir: PathBuf,
-    ) -> Self {
-        Self {
-            uuid,
-            remote,
-            remote_id,
-            filename,
-            script_file,
-            files_sent,
-            tags,
-            work_dir,
-            remote_dir,
-            status: JobStatus::Queued,
-            submit_time: Utc::now(),
-            sync_time: None,
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_parts(
-        uuid: Uuid,
-        remote: String,
-        remote_id: String,
-        filename: String,
-        script_file: PathBuf,
-        files_sent: Vec<PathBuf>,
-        tags: Vec<String>,
+        queue: Option<String>,
         work_dir: PathBuf,
         remote_dir: PathBuf,
         status: JobStatus,
@@ -253,7 +226,7 @@ mod tests {
         let submit_time = Utc::now();
         let sync_time = Some(Utc::now());
 
-        let job = Job::from_parts(
+        let job = Job::new(
             uuid,
             "babel".to_string(),
             "99.server".to_string(),

@@ -1,7 +1,8 @@
 use crate::config::FileStrategy;
 use crate::connection::SshConnection;
-use crate::job::Job;
+use crate::job::{Job, JobStatus};
 use crate::jobs::Jobs;
+use chrono::Utc;
 use std::path::PathBuf;
 
 use tracing::{error, info};
@@ -127,6 +128,10 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             args.tags.clone(),
             remote_dir,
             work_dir,
+            remote_dir,
+            JobStatus::Queued,
+            Utc::now(),
+            None,
         );
 
         Jobs::insert_job(&ctx.db_path, &job)?;

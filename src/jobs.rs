@@ -161,7 +161,7 @@ impl Jobs {
                         .as_deref()
                         .and_then(|s| serde_json::from_str(s).ok())
                         .unwrap_or_default();
-                    Ok(Job::from_parts(
+                    Ok(Job::new(
                         uuid,
                         remote,
                         remote_id.unwrap_or_default(),
@@ -474,7 +474,7 @@ mod tests {
     use crate::job::Job;
 
     fn make_job(remote: &str, remote_id: &str, status: JobStatus) -> Job {
-        Job::from_parts(
+        Job::new(
             Uuid::new_v4(),
             remote.to_string(),
             remote_id.to_string(),
@@ -590,7 +590,7 @@ mod tests {
         let uuid2 = "aaaaaaaa-0000-0000-0000-000000000002"
             .parse::<Uuid>()
             .unwrap();
-        let job1 = Job::from_parts(
+        let job1 = Job::new(
             uuid1,
             "babel".to_string(),
             "1".to_string(),
@@ -598,13 +598,14 @@ mod tests {
             PathBuf::from("myjob.job"),
             vec![],
             vec![],
+            None,
             PathBuf::from("/tmp"),
             PathBuf::from("/remote"),
             JobStatus::Queued,
             Utc::now(),
             None,
         );
-        let job2 = Job::from_parts(
+        let job2 = Job::new(
             uuid2,
             "babel".to_string(),
             "2".to_string(),
@@ -659,7 +660,7 @@ mod tests {
     fn test_query_synced_filter() {
         let (_tmp, path) = temp_db();
         Jobs::insert_job(&path, &make_job("babel", "1", JobStatus::Finished)).unwrap();
-        let synced_job = Job::from_parts(
+        let synced_job = Job::new(
             Uuid::new_v4(),
             "babel".to_string(),
             "2".to_string(),
@@ -687,7 +688,7 @@ mod tests {
         Jobs::insert_job(&path, &make_job("babel", "2", JobStatus::Running)).unwrap();
         Jobs::insert_job(&path, &make_job("babel", "3", JobStatus::Finished)).unwrap();
         Jobs::insert_job(&path, &make_job("babel", "4", JobStatus::Error)).unwrap();
-        let already_synced = Job::from_parts(
+        let already_synced = Job::new(
             Uuid::new_v4(),
             "babel".to_string(),
             "5".to_string(),
