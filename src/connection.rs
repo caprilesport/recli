@@ -303,9 +303,13 @@ impl RemoteConnection for SshConnection {
     }
 
     fn mkdir(&self, path: &Path) -> Result<(), Error> {
-        debug!("Creating directory {:?} @ remote", path);
         let sftp = self.session.sftp()?;
-        sftp.mkdir(path, 0o755)?; // 755 chmod basically
+        if sftp.stat(path).is_ok() {
+            debug!("Directory already exists, skipping: {:?}", path);
+        } else {
+            debug!("Creating directory {:?}", path);
+            sftp.mkdir(path, 0o755)?;
+        }
         Ok(())
     }
 
