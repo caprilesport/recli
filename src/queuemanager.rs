@@ -230,7 +230,9 @@ impl QueueManager {
         let job_name = shell_quote(job_name);
         match self {
             Self::Pbs => format!("cd {remote_dir} && qsub {job_name}"),
-            Self::Pueue => format!("pueue add --working-directory {remote_dir} -- ./{job_name}"),
+            Self::Pueue => {
+                format!("pueue add --working-directory {remote_dir} -- bash ./{job_name}")
+            }
             Self::Slurm => format!("cd {remote_dir} && sbatch {job_name}"),
         }
     }
@@ -433,7 +435,7 @@ Group "default" (4 parallel): running
         );
         assert_eq!(
             QueueManager::Pueue.submit_command(dir_with_spaces, script_with_quote),
-            "pueue add --working-directory '/remote/my jobs/uuid-1' -- ./'it'\\''s a job.pbs'"
+            "pueue add --working-directory '/remote/my jobs/uuid-1' -- bash ./'it'\\''s a job.pbs'"
         );
     }
 
@@ -511,7 +513,7 @@ Group "default" (4 parallel): running
         );
         assert_eq!(
             QueueManager::Pueue.submit_command(remote_dir, job_name),
-            "pueue add --working-directory '/remote/work/job1' -- ./'script.job'"
+            "pueue add --working-directory '/remote/work/job1' -- bash ./'script.job'"
         );
         assert_eq!(
             QueueManager::Slurm.submit_command(remote_dir, job_name),
