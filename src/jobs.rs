@@ -35,7 +35,10 @@ impl DerefMut for Jobs {
 }
 
 fn open_db(path: &Path) -> Result<Connection, Error> {
-    let conn = Connection::open(path)?;
+    let conn = Connection::open(path).map_err(|e| Error::DbOpen {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA busy_timeout=5000;

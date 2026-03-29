@@ -154,6 +154,12 @@ pub struct Config {
 pub enum ConfigError {
     #[error("IO error, {0}")]
     IO(#[from] std::io::Error),
+    #[error("Cannot read '{path}': {source}")]
+    FileRead {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("Error in config.toml file: {0}")]
     MalformedTomlConfig(#[from] toml::de::Error),
     #[error("Remote {0} not found in config file")]
@@ -167,13 +173,21 @@ impl Config {
         let config_dir = Config::get_dir()?;
         let config_file = config_dir.join("config.toml");
         trace!("Attempting to read {:?}", config_file);
-        let toml_string = std::fs::read_to_string(config_file)?;
+        let toml_string =
+            std::fs::read_to_string(&config_file).map_err(|e| ConfigError::FileRead {
+                path: config_file,
+                source: e,
+            })?;
         trace!("Parsing config file");
         let mut config: Config = toml::from_str(&toml_string)?;
 
         let ignore_file = config_dir.join("ignore");
         if ignore_file.exists() {
-            let ignore_patterns = std::fs::read_to_string(ignore_file)?
+            let ignore_patterns = std::fs::read_to_string(&ignore_file)
+                .map_err(|e| ConfigError::FileRead {
+                    path: ignore_file.clone(),
+                    source: e,
+                })?
                 .lines()
                 .map(glob::Pattern::new)
                 .collect::<Result<Vec<glob::Pattern>, glob::PatternError>>()?;

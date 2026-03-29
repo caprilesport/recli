@@ -10,6 +10,12 @@ pub enum Error {
     AmbiguousPrefix { prefix: String, matches: String },
     #[error("Connection error:\n{0}")]
     Ssh(#[from] crate::connection::Error),
+    #[error("Cannot open database at '{path}': {source}")]
+    DbOpen {
+        path: std::path::PathBuf,
+        #[source]
+        source: rusqlite::Error,
+    },
     #[error("Database error:\n{0}")]
     Db(#[from] rusqlite::Error),
     #[error("IO error:\n{0}")]

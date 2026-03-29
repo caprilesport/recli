@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 #[derive(thiserror::Error, std::fmt::Debug)]
 pub enum Error {
-    #[error("Connection error:\n{0}")]
+    #[error("{0}")]
     Connection(#[from] crate::connection::Error),
     #[error("{0}")]
     IO(#[from] std::io::Error), // #[error()]

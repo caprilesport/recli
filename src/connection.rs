@@ -15,10 +15,29 @@ pub enum Error {
     InvalidPublicKey,
     #[error("No public key found")]
     NoPublicKeyAccepted,
-    #[error("Incorrect password, try again")]
-    IncorrectPassword,
+    #[error("Authentication failed for '{user}' @ '{remote}'")]
+    AuthFailed { user: String, remote: String },
     #[error("Connection to remote {0} timed out.")]
     TimeoutToRemote(String),
+    #[error("SSH handshake with '{remote}' failed: {source}")]
+    Handshake {
+        remote: String,
+        #[source]
+        source: ssh2::Error,
+    },
+    #[error("SFTP {operation} on '{path}': {source}")]
+    SftpOperation {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: ssh2::Error,
+    },
+    #[error("Local file '{path}': {source}")]
+    LocalFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("Ssh2 failed, caused by: {0}")]
     Ssh2(#[from] ssh2::Error),
     #[error("{0}")]
@@ -127,7 +146,10 @@ impl SshConnection {
         let mut session = Session::new()?;
         session.set_timeout(CONNECTION_TIMEOUT);
         session.set_tcp_stream(tcp);
-        session.handshake()?;
+        session.handshake().map_err(|e| Error::Handshake {
+            remote: remote.name().to_string(),
+            source: e,
+        })?;
         SshConnection::authenticate(&mut session, remote.user(), remote)?;
         Ok(SshConnection { session })
     }
@@ -155,7 +177,10 @@ impl SshConnection {
                 );
                 if SshConnection::try_password_auth(sess, username).is_err() {
                     debug!("Password authentication also failed.");
-                    return Err(Error::IncorrectPassword);
+                    return Err(Error::AuthFailed {
+                        user: username.to_string(),
+                        remote: remote.name().to_string(),
+                    });
                 }
             }
         }
@@ -231,7 +256,10 @@ impl SshConnection {
             .and_then(std::ffi::OsStr::to_str)
             .ok_or_else(|| Error::InvalidPath(local_path.to_path_buf()))?
             .to_string();
-        let local_meta = std::fs::metadata(local_path)?;
+        let local_meta = std::fs::metadata(local_path).map_err(|e| Error::LocalFile {
+            path: local_path.to_path_buf(),
+            source: e,
+        })?;
         let local_mtime = local_meta
             .modified()?
             .duration_since(std::time::UNIX_EPOCH)?
@@ -256,7 +284,10 @@ impl SshConnection {
         local_path: &Path,
     ) -> Result<bool, Error> {
         if local_path.exists() {
-            let local_meta = std::fs::metadata(local_path)?;
+            let local_meta = std::fs::metadata(local_path).map_err(|e| Error::LocalFile {
+                path: local_path.to_path_buf(),
+                source: e,
+            })?;
             let local_mtime = local_meta
                 .modified()?
                 .duration_since(std::time::UNIX_EPOCH)?
@@ -308,7 +339,11 @@ impl RemoteConnection for SshConnection {
             debug!("Directory already exists, skipping: {:?}", path);
         } else {
             debug!("Creating directory {:?}", path);
-            sftp.mkdir(path, 0o755)?;
+            sftp.mkdir(path, 0o755).map_err(|e| Error::SftpOperation {
+                operation: "mkdir",
+                path: path.to_path_buf(),
+                source: e,
+            })?;
         }
         Ok(())
     }
@@ -321,7 +356,12 @@ impl RemoteConnection for SshConnection {
     ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
         let remote_files: std::collections::HashMap<String, u64> = sftp
-            .readdir(remote_dir)?
+            .readdir(remote_dir)
+            .map_err(|e| Error::SftpOperation {
+                operation: "readdir",
+                path: remote_dir.to_path_buf(),
+                source: e,
+            })?
             .into_iter()
             .filter_map(|(path, stat)| {
                 path.file_name()
@@ -338,7 +378,11 @@ impl RemoteConnection for SshConnection {
 
             if Self::should_upload_file(file_path, &remote_files)? {
                 debug!("Uploading {:?} to {:?}", file_path, remote_dir);
-                let mut local_file = std::fs::File::open(file_path)?;
+                let mut local_file =
+                    std::fs::File::open(file_path).map_err(|e| Error::LocalFile {
+                        path: file_path.clone(),
+                        source: e,
+                    })?;
                 let file_name = file_path.file_name().ok_or_else(|| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -346,7 +390,13 @@ impl RemoteConnection for SshConnection {
                     )
                 })?;
                 let remote_path = remote_dir.join(file_name);
-                let mut remote_file = sftp.create(remote_path.as_path())?;
+                let mut remote_file =
+                    sftp.create(remote_path.as_path())
+                        .map_err(|e| Error::SftpOperation {
+                            operation: "create",
+                            path: remote_path.clone(),
+                            source: e,
+                        })?;
                 std::io::copy(&mut local_file, &mut remote_file)?;
             }
         }
@@ -360,7 +410,11 @@ impl RemoteConnection for SshConnection {
         ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
         let sftp = self.session.sftp()?;
-        for entry in sftp.readdir(remote_dir)? {
+        for entry in sftp.readdir(remote_dir).map_err(|e| Error::SftpOperation {
+            operation: "readdir",
+            path: remote_dir.to_path_buf(),
+            source: e,
+        })? {
             let (remote_path, stat) = entry;
             if ignore.iter().any(|p| p.matches_path(&remote_path)) {
                 debug!("Ignoring {:?} due to ignore pattern", &remote_path);
@@ -372,8 +426,17 @@ impl RemoteConnection for SshConnection {
                     .ok_or_else(|| Error::InvalidPath(remote_path.clone()))?;
                 let local_path = local_dir.join(file_name);
                 if Self::should_download_file(&stat, &local_path)? {
-                    let mut remote_file = sftp.open(&remote_path)?;
-                    let mut local_file = std::fs::File::create(&local_path)?;
+                    let mut remote_file =
+                        sftp.open(&remote_path).map_err(|e| Error::SftpOperation {
+                            operation: "open",
+                            path: remote_path.clone(),
+                            source: e,
+                        })?;
+                    let mut local_file =
+                        std::fs::File::create(&local_path).map_err(|e| Error::LocalFile {
+                            path: local_path.clone(),
+                            source: e,
+                        })?;
                     debug!("Downloading {:?}", remote_path);
                     std::io::copy(&mut remote_file, &mut local_file)?;
                 }
