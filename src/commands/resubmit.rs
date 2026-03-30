@@ -1,9 +1,8 @@
-use crate::connection::SshConnection;
 use crate::job::JobStatus;
 use crate::jobs::Jobs;
 use chrono::Utc;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{error, info};
 
 /// Re-submits an existing job to a queue, optionally to a different remote.
 ///
@@ -33,7 +32,14 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let cross_remote = target_remote_name != job.remote();
 
     let remote = ctx.config().get_remote(target_remote_name)?;
-    let connection = SshConnection::new(remote)?;
+
+    let connection = match ctx.connect(remote) {
+        Ok(c) => c,
+        Err(err) => {
+            error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+            return Err(err)?;
+        }
+    };
 
     // For cross-remote, derive a new remote_dir under the new remote's work_dir.
     // For same remote, reuse the existing remote_dir.
@@ -62,7 +68,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         .to_owned();
     let job_name = directives.name.unwrap_or(file_stem);
 
-    let remote_id = remote.submit(&script_path, &extra_files, &connection, &remote_dir)?;
+    let remote_id = remote.submit(&script_path, &extra_files, &*connection, &remote_dir)?;
 
     // Collect what was sent (script + extra, same as submit does)
     let mut files_sent = vec![script_path];

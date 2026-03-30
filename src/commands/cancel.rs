@@ -1,7 +1,6 @@
-use crate::connection::SshConnection;
 use crate::jobs::Jobs;
 
-use tracing::info;
+use tracing::{error, info};
 
 /// Cancels a running or queued job on its remote.
 ///
@@ -19,9 +18,15 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let jobs = Jobs::load_from_db(ctx.db_path())?;
     let job = jobs.find_by_prefix(&args.job)?;
     let remote = ctx.config().get_remote(job.remote())?;
-    let connection = SshConnection::new(remote)?;
+    let connection = match ctx.connect(remote) {
+        Ok(c) => c,
+        Err(err) => {
+            error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+            return Err(err)?;
+        }
+    };
 
-    remote.cancel(job.remote_id(), &connection)?;
+    remote.cancel(job.remote_id(), &*connection)?;
 
     if ctx.json() {
         println!("{}", serde_json::to_string_pretty(job)?);

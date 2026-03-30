@@ -1,4 +1,3 @@
-use crate::connection::{RemoteConnection, SshConnection};
 use tracing::warn;
 
 /// Shows the live queue state on one or more remotes.
@@ -37,7 +36,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let mut results = Vec::new();
 
     for remote in &targets {
-        let connection = match SshConnection::new(remote) {
+        let connection = match ctx.connect(remote) {
             Ok(c) => c,
             Err(e) => {
                 warn!("Failed to connect to {}: {e}", remote.name());

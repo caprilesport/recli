@@ -67,7 +67,7 @@ STDERR:
 
 /// A trait that defines the actions that can be performed on a remote machine.
 /// This abstraction allows for decoupling the runtime logic from the test logic
-pub trait RemoteConnection {
+pub trait RemoteConnection: Send + Sync {
     /// Executes a command on the remote and returns its stdout.
     ///
     /// # Errors
@@ -450,5 +450,23 @@ impl RemoteConnection for SshConnection {
         let quoted = format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
         self.execute(&format!("rm -rf {quoted}"))?;
         Ok(())
+    }
+}
+
+/// Creates SSH connections to remotes.
+///
+/// This abstraction decouples command logic from transport, allowing
+/// commands to be tested without a real SSH server.
+pub trait ConnectionFactory: Send + Sync {
+    fn connect(&self, remote: &Remote) -> Result<Box<dyn RemoteConnection>, Error>;
+}
+
+/// A [`ConnectionFactory`] that opens a direct SSH connection for each request.
+pub struct SshFactory;
+
+impl ConnectionFactory for SshFactory {
+    fn connect(&self, remote: &Remote) -> Result<Box<dyn RemoteConnection>, Error> {
+        let connection = SshConnection::new(remote)?;
+        Ok(Box::new(connection))
     }
 }

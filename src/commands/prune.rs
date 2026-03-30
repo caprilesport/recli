@@ -1,4 +1,3 @@
-use crate::connection::{RemoteConnection, SshConnection};
 use crate::jobs::Jobs;
 use chrono::{Duration, Utc};
 
@@ -107,7 +106,13 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     for (remote_name, remote_jobs) in &by_remote {
         let remote = ctx.config().get_remote(remote_name)?;
-        let connection = SshConnection::new(remote)?;
+        let connection = match ctx.connect(remote) {
+            Ok(c) => c,
+            Err(err) => {
+                error!("Failed to connect to {}, caused by: {}", remote.name(), err);
+                return Err(err)?;
+            }
+        };
 
         for job in remote_jobs {
             match connection.remove_dir(job.remote_dir()) {

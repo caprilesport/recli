@@ -11,6 +11,7 @@ pub struct Context {
     config: Config,
     db_path: PathBuf,
     json: bool,
+    connection_factory: Box<dyn ConnectionFactory>,
 }
 
 impl Context {
@@ -20,11 +21,19 @@ impl Context {
             config,
             db_path: Config::get_dir()?.join("jobs.db"),
             json,
+            connection_factory: Box::new(SshFactory),
         })
     }
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn connect(
+        &self,
+        remote: &crate::remote::Remote,
+    ) -> Result<Box<dyn RemoteConnection>, crate::connection::Error> {
+        self.connection_factory.connect(remote)
     }
 
     pub fn clear_ignore(&mut self) {

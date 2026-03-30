@@ -1,5 +1,4 @@
 use crate::config::FileStrategy;
-use crate::connection::SshConnection;
 use crate::job::{Job, JobStatus};
 use crate::jobs::Jobs;
 use chrono::Utc;
@@ -88,7 +87,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         })
         .collect::<color_eyre::Result<_>>()?;
 
-    let connection = match SshConnection::new(remote) {
+    let connection = match ctx.connect(remote) {
         Ok(c) => c,
         Err(err) => {
             error!("Failed to connect to {}, caused by: {}", remote.name(), err);
@@ -132,7 +131,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         companion_files.extend_from_slice(&shared_files);
 
         let remote_dir = remote.work_dir().join(id.to_string());
-        let remote_id = remote.submit(&script_path, &companion_files, &connection, &remote_dir)?;
+        let remote_id = remote.submit(&script_path, &companion_files, &*connection, &remote_dir)?;
 
         let mut files_sent = vec![script_path.clone()];
         files_sent.extend_from_slice(&companion_files);

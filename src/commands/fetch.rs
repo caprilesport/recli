@@ -1,7 +1,6 @@
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
-use crate::connection::SshConnection;
 use crate::context::Context;
 use crate::job::Job;
 use crate::jobs::Jobs;
@@ -21,13 +20,17 @@ pub struct Args {
 
 /// Fetches statuses from a slice of remotes in parallel, updates the shared
 /// job store, and returns the jobs whose status changed.
-pub(crate) fn fetch_statuses(remotes: &[Remote], arcmtx: &Arc<Mutex<Jobs>>) -> Vec<Job> {
+pub(crate) fn fetch_statuses(
+    remotes: &[Remote],
+    arcmtx: &Arc<Mutex<Jobs>>,
+    ctx: &crate::context::Context,
+) -> Vec<Job> {
     let changed: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
 
     remotes.par_iter().for_each(|remote| {
         let shared_changed = changed.clone();
-        match SshConnection::new(remote) {
-            Ok(conn) => match remote.status(&conn) {
+        match ctx.connect(remote) {
+            Ok(conn) => match remote.status(&*conn) {
                 Ok(statuses) => {
                     let mut jobs_guard = arcmtx.lock().unwrap();
                     match jobs_guard.update(&statuses, remote.name()) {
@@ -64,7 +67,7 @@ pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
         None => &ctx.config().remotes,
     };
 
-    let changed = fetch_statuses(remotes, &arcmtx);
+    let changed = fetch_statuses(remotes, &arcmtx, &ctx);
 
     if ctx.json() {
         println!("{}", serde_json::to_string_pretty(&changed)?);

@@ -160,32 +160,32 @@ mod tests {
     use crate::connection::RemoteConnection;
     use crate::job::JobStatus;
     use crate::queuemanager::QueueManager;
-    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
+    use std::sync::RwLock;
 
     struct MockConnection {
-        commands: RefCell<Vec<String>>,
-        uploads: RefCell<Vec<(Vec<PathBuf>, PathBuf)>>,
-        downloads: RefCell<Vec<(PathBuf, PathBuf)>>,
-        mock_output: RefCell<HashMap<String, String>>,
+        commands: RwLock<Vec<String>>,
+        uploads: RwLock<Vec<(Vec<PathBuf>, PathBuf)>>,
+        downloads: RwLock<Vec<(PathBuf, PathBuf)>>,
+        mock_output: RwLock<HashMap<String, String>>,
     }
 
     impl MockConnection {
         fn new() -> Self {
             MockConnection {
-                commands: RefCell::new(Vec::new()),
-                uploads: RefCell::new(Vec::new()),
-                downloads: RefCell::new(Vec::new()),
-                mock_output: RefCell::new(HashMap::new()),
+                commands: RwLock::new(Vec::new()),
+                uploads: RwLock::new(Vec::new()),
+                downloads: RwLock::new(Vec::new()),
+                mock_output: RwLock::new(HashMap::new()),
             }
         }
     }
 
     impl RemoteConnection for MockConnection {
         fn execute(&self, command: &str) -> Result<String, crate::connection::Error> {
-            self.commands.borrow_mut().push(command.to_string());
-            if let Some(output) = self.mock_output.borrow().get(command) {
+            self.commands.write().unwrap().push(command.to_string());
+            if let Some(output) = self.mock_output.read().unwrap().get(command) {
                 Ok(output.clone())
             } else {
                 Ok("".to_string())
@@ -203,7 +203,8 @@ mod tests {
             _ignore: &[glob::Pattern],
         ) -> Result<(), crate::connection::Error> {
             self.uploads
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .push((local_paths.to_vec(), remote_dir.to_path_buf()));
             Ok(())
         }
@@ -215,7 +216,8 @@ mod tests {
             _ignore: &[glob::Pattern],
         ) -> Result<(), crate::connection::Error> {
             self.downloads
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .push((remote_dir.to_path_buf(), local_dir.to_path_buf()));
             Ok(())
         }
@@ -245,7 +247,7 @@ mod tests {
         let script = Path::new("/home/user/jobs/myjob.pbs");
         let remote_dir = Path::new("/remote/work/uuid-1");
 
-        connection.mock_output.borrow_mut().insert(
+        connection.mock_output.write().unwrap().insert(
             "cd '/remote/work/uuid-1' && qsub 'myjob.pbs'".to_string(),
             "12345.server\n".to_string(),
         );
@@ -254,9 +256,9 @@ mod tests {
 
         assert_eq!(remote_id, "12345.server");
         // mkdir, upload, execute — in that order
-        assert_eq!(connection.commands.borrow().len(), 1);
-        assert_eq!(connection.uploads.borrow().len(), 1);
-        let (uploaded_files, uploaded_to) = connection.uploads.borrow()[0].clone();
+        assert_eq!(connection.commands.write().unwrap().len(), 1);
+        assert_eq!(connection.uploads.write().unwrap().len(), 1);
+        let (uploaded_files, uploaded_to) = connection.uploads.write().unwrap()[0].clone();
         assert_eq!(uploaded_files, vec![script.to_path_buf()]);
         assert_eq!(uploaded_to, remote_dir);
     }
@@ -272,7 +274,7 @@ mod tests {
         ];
         let remote_dir = Path::new("/remote/work/uuid-2");
 
-        connection.mock_output.borrow_mut().insert(
+        connection.mock_output.write().unwrap().insert(
             "cd '/remote/work/uuid-2' && qsub 'myjob.pbs'".to_string(),
             "99.server\n".to_string(),
         );
@@ -282,7 +284,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(remote_id, "99.server");
-        let (uploaded_files, _) = connection.uploads.borrow()[0].clone();
+        let (uploaded_files, _) = connection.uploads.write().unwrap()[0].clone();
         assert_eq!(uploaded_files.len(), 3); // script + 2 extra
         assert_eq!(uploaded_files[0], script);
         assert_eq!(uploaded_files[1], extra[0]);
@@ -301,7 +303,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
 12345.server    testuser  small   ts-produc* 13716*   1   8   11gb 10000 Q 2345:
 "#;
-        connection.mock_output.borrow_mut().insert(
+        connection.mock_output.write().unwrap().insert(
             "qstat -u testuser -x".to_string(),
             status_output.to_string(),
         );
@@ -310,6 +312,6 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses.get("12345.server"), Some(&JobStatus::Queued));
-        assert_eq!(connection.commands.borrow().len(), 1);
+        assert_eq!(connection.commands.read().unwrap().len(), 1);
     }
 }

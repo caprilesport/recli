@@ -1,8 +1,7 @@
-use crate::connection::{RemoteConnection, SshConnection};
 use crate::jobs::Jobs;
 use std::io::{IsTerminal, Write};
 
-use tracing::info;
+use tracing::{error, info};
 
 /// Shows the log output of a job from its remote directory.
 ///
@@ -49,8 +48,15 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         }
     }
 
-    let remote = ctx.config.get_remote(job.remote())?;
-    let connection = SshConnection::new(remote)?;
+    let remote = ctx.config().get_remote(job.remote())?;
+
+    let connection = match ctx.connect(remote) {
+        Ok(conn) => conn,
+        Err(e) => {
+            error!("Failed to connect to {}, caused by: {}", remote.name(), e);
+            return Err(e)?;
+        }
+    };
 
     let is_tty = std::io::stdout().is_terminal();
 
@@ -66,7 +72,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
             job.remote_dir(),
             job.remote_id(),
             job.script_file(),
-            &connection,
+            &*connection,
         )
     };
 

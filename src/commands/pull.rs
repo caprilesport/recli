@@ -1,5 +1,4 @@
 use crate::commands::fetch::fetch_statuses;
-use crate::connection::SshConnection;
 use crate::job::Job;
 use crate::jobs::Jobs;
 use rayon::prelude::*;
@@ -36,12 +35,12 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
             jobs.find_by_prefix(prefix)?.remote().to_owned()
         };
         let remote = ctx.config().get_remote(&remote_name)?;
-        let connection = SshConnection::new(remote)?;
+        let connection = ctx.connect(remote)?;
 
         // Update status first (best effort)
         {
             let mut jobs = Jobs::load_from_db(ctx.db_path())?;
-            match remote.status(&connection) {
+            match remote.status(&*connection) {
                 Ok(statuses) => {
                     if let Err(e) = jobs.update(&statuses, remote.name()) {
                         error!("Failed to update status: {}", e);
@@ -56,7 +55,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
         let job = jobs.find_by_prefix(prefix)?;
         let job_uuid = *job.uuid();
 
-        match Jobs::sync_job(job, &connection, &ctx.config().ignore) {
+        match Jobs::sync_job(job, &*connection, &ctx.config().ignore) {
             Ok(sync_time) => {
                 jobs.update_sync_time(&job_uuid, sync_time)?;
                 if ctx.json() {
@@ -74,7 +73,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
         // Step 1: fetch all statuses in parallel
         let jobs = Jobs::load_from_db(ctx.db_path())?;
         let arcmtx = Arc::new(Mutex::new(jobs));
-        fetch_statuses(&ctx.config().remotes, &arcmtx);
+        fetch_statuses(&ctx.config().remotes, &arcmtx, &ctx);
 
         // Step 2: download files for all now-finished jobs
         let jobs = Jobs::load_from_db(ctx.db_path())?;
@@ -97,7 +96,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
                 }
             };
 
-            let connection = match SshConnection::new(remote) {
+            let connection = match ctx.connect(remote) {
                 Ok(conn) => conn,
                 Err(e) => {
                     error!("Failed to connect to {}: {}", remote.name(), e);
@@ -111,7 +110,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
                     return;
                 };
 
-                match Jobs::sync_job(&job, &connection, &ctx.config().ignore) {
+                match Jobs::sync_job(&job, &*connection, &ctx.config().ignore) {
                     Ok(sync_time) => {
                         if let Err(e) = arcmtx.lock().unwrap().update_sync_time(id, sync_time) {
                             error!("Failed to update sync time for {}: {}", job.short_id(), e);
