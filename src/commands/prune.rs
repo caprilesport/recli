@@ -1,5 +1,6 @@
+use crate::job::Job;
 use crate::jobs::Jobs;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 use tracing::{error, info};
 
@@ -40,30 +41,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let days = args.days.unwrap_or(ctx.config().settings.prune_after_days);
     let cutoff = Utc::now() - Duration::days(i64::from(days));
 
-    let to_prune: Vec<crate::job::Job> = if let Some(prefix) = &args.job {
-        let job = jobs.find_by_prefix(prefix)?;
-        if let Some(remote_filter) = &args.remote
-            && job.remote() != remote_filter
-        {
-            return Err(color_eyre::eyre::eyre!(
-                "Job {} is on remote '{}', not '{}'",
-                job.short_id(),
-                job.remote(),
-                remote_filter
-            ));
-        }
-        vec![job.clone()]
-    } else {
-        let mut query = jobs.query().synced(true);
-        if let Some(remote_filter) = &args.remote {
-            query = query.with_remote(remote_filter);
-        }
-        query
-            .iter()
-            .filter(|j| j.sync_time().is_some_and(|t| *t < cutoff))
-            .cloned()
-            .collect()
-    };
+    let to_prune: Vec<Job> = collect_prunable_jobs(args.job, &jobs, args.remote, cutoff)?;
 
     if to_prune.is_empty() {
         if ctx.json() {
@@ -148,4 +126,38 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     }
 
     Ok(())
+}
+
+fn collect_prunable_jobs(
+    job: Option<String>,
+    jobs: &Jobs,
+    remote: Option<String>,
+    cutoff: DateTime<Utc>,
+) -> color_eyre::Result<Vec<Job>> {
+    let to_prune = if let Some(prefix) = job {
+        let job = jobs.find_by_prefix(&prefix)?;
+        if let Some(remote_filter) = remote
+            && job.remote() != remote_filter
+        {
+            return Err(color_eyre::eyre::eyre!(
+                "Job {} is on remote '{}', not '{}'",
+                job.short_id(),
+                job.remote(),
+                remote_filter
+            ));
+        }
+        vec![job.clone()]
+    } else {
+        let mut query = jobs.query().synced(true);
+        if let Some(remote_filter) = &remote {
+            query = query.with_remote(remote_filter);
+        }
+        query
+            .iter()
+            .filter(|j| j.sync_time().is_some_and(|t| *t < cutoff))
+            .cloned()
+            .collect()
+    };
+
+    Ok(to_prune)
 }
