@@ -58,7 +58,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
         match Jobs::sync_job(job, &*connection, &ctx.config().ignore) {
             Ok(sync_time) => {
                 jobs.update_sync_time(&job_uuid, sync_time)?;
-                if ctx.json() {
+                if ctx.json_output() {
                     let jobs = Jobs::load_from_db(ctx.db_path())?;
                     let synced = jobs.find_by_prefix(prefix)?;
                     println!("{}", serde_json::to_string_pretty(&[synced])?);
@@ -123,7 +123,7 @@ pub fn execute(args: Args, mut ctx: crate::context::Context) -> color_eyre::Resu
             });
         });
 
-        if ctx.json() {
+        if ctx.json_output() {
             let synced = Arc::try_unwrap(synced).unwrap().into_inner().unwrap();
             println!("{}", serde_json::to_string_pretty(&synced)?);
         }

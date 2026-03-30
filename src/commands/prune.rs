@@ -44,7 +44,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let to_prune: Vec<Job> = collect_prunable_jobs(args.job, &jobs, args.remote, cutoff)?;
 
     if to_prune.is_empty() {
-        if ctx.json() {
+        if ctx.json_output() {
             println!("[]");
         } else {
             info!("No jobs to prune");
@@ -54,7 +54,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     if !args.execute {
         // Dry run
-        if ctx.json() {
+        if ctx.json_output() {
             println!("{}", serde_json::to_string_pretty(&to_prune)?);
         } else {
             println!("Dry run — {} job(s) would be pruned:", to_prune.len());

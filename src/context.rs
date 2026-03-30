@@ -10,17 +10,17 @@ use std::path::{Path, PathBuf};
 pub struct Context {
     config: Config,
     db_path: PathBuf,
-    json: bool,
+    json_output: bool,
     connection_factory: Box<dyn ConnectionFactory>,
 }
 
 impl Context {
-    pub fn new(json: bool) -> color_eyre::Result<Self> {
+    pub fn new(json_output: bool) -> color_eyre::Result<Self> {
         let config = Config::read()?;
         Ok(Self {
             config,
             db_path: Config::get_dir()?.join("jobs.db"),
-            json,
+            json_output,
             connection_factory: Box::new(SshFactory),
         })
     }
@@ -46,5 +46,7 @@ impl Context {
 
     pub fn json(&self) -> bool {
         self.json
+    pub fn json_output(&self) -> bool {
+        self.json_output
     }
 }

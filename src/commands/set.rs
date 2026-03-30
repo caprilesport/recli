@@ -79,7 +79,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         jobs.update_tags(&uuid, &[])?;
     }
 
-    if ctx.json() {
+    if ctx.json_output() {
         let jobs = Jobs::load_from_db(ctx.db_path())?;
         let updated = jobs.find_by_prefix(&args.job_id)?;
         println!("{}", serde_json::to_string_pretty(&updated)?);

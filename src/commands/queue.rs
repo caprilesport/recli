@@ -51,15 +51,15 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         }
     }
 
-    if ctx.json() {
-        let json: Vec<_> = results
+    if ctx.json_output() {
+        let json_output: Vec<_> = results
             .iter()
             .map(|(name, res)| match res {
                 Ok(output) => serde_json::json!({ "remote": name, "output": output }),
                 Err(e) => serde_json::json!({ "remote": name, "error": e }),
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&json)?);
+        println!("{}", serde_json::to_string_pretty(&json_output)?);
         return Ok(());
     }
 

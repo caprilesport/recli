@@ -16,7 +16,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     let jobs = Jobs::load_from_db(ctx.db_path())?;
     let job = jobs.find_by_prefix(&args.job)?;
 
-    if ctx.json() {
+    if ctx.json_output() {
         let json_str = serde_json::to_string_pretty(job)?;
         println!("{json_str}");
         return Ok(());

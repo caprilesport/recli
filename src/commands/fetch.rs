@@ -20,7 +20,7 @@ pub struct Args {
 
 /// Fetches statuses from a slice of remotes in parallel, updates the shared
 /// job store, and returns the jobs whose status changed.
-pub(crate) fn fetch_statuses(
+pub fn fetch_statuses(
     remotes: &[Remote],
     arcmtx: &Arc<Mutex<Jobs>>,
     ctx: &crate::context::Context,

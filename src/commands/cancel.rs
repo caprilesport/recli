@@ -28,7 +28,7 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     remote.cancel(job.remote_id(), &*connection)?;
 
-    if ctx.json() {
+    if ctx.json_output() {
         println!("{}", serde_json::to_string_pretty(job)?);
     } else {
         info!(
