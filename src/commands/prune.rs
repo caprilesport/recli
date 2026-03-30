@@ -36,9 +36,9 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
-    let jobs = Jobs::load_from_db(&ctx.db_path)?;
-    let days = args.days.unwrap_or(ctx.config.settings.prune_after_days);
+pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<()> {
+    let jobs = Jobs::load_from_db(ctx.db_path())?;
+    let days = args.days.unwrap_or(ctx.config().settings.prune_after_days);
     let cutoff = Utc::now() - Duration::days(i64::from(days));
 
     let to_prune: Vec<crate::job::Job> = if let Some(prefix) = &args.job {
@@ -67,7 +67,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     };
 
     if to_prune.is_empty() {
-        if ctx.json {
+        if ctx.json() {
             println!("[]");
         } else {
             info!("No jobs to prune");
@@ -77,7 +77,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     if !args.execute {
         // Dry run
-        if ctx.json {
+        if ctx.json() {
             println!("{}", serde_json::to_string_pretty(&to_prune)?);
         } else {
             println!("Dry run — {} job(s) would be pruned:", to_prune.len());
@@ -106,7 +106,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     }
 
     for (remote_name, remote_jobs) in &by_remote {
-        let remote = ctx.config.get_remote(remote_name)?;
+        let remote = ctx.config().get_remote(remote_name)?;
         let connection = SshConnection::new(remote)?;
 
         for job in remote_jobs {
@@ -118,7 +118,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
                         job.short_id()
                     );
                     if args.db {
-                        Jobs::delete_job(&ctx.db_path, job.uuid())?;
+                        Jobs::delete_job(ctx.db_path(), job.uuid())?;
                         info!(
                             "Removed {} ({}) from local database",
                             job.filename(),
@@ -138,7 +138,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         }
     }
 
-    if ctx.json {
+    if ctx.json() {
         println!("{}", serde_json::to_string_pretty(&to_prune)?);
     }
 

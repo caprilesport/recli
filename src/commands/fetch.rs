@@ -1,8 +1,8 @@
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 
-use crate::Context;
 use crate::connection::SshConnection;
+use crate::context::Context;
 use crate::job::Job;
 use crate::jobs::Jobs;
 use crate::remote::Remote;
@@ -56,17 +56,17 @@ pub(crate) fn fetch_statuses(remotes: &[Remote], arcmtx: &Arc<Mutex<Jobs>>) -> V
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
-    let jobs = Jobs::load_from_db(&ctx.db_path)?;
+    let jobs = Jobs::load_from_db(ctx.db_path())?;
     let arcmtx = Arc::new(Mutex::new(jobs));
 
     let remotes: &[Remote] = match &args.remote {
-        Some(name) => std::slice::from_ref(ctx.config.get_remote(name)?),
-        None => &ctx.config.remotes,
+        Some(name) => std::slice::from_ref(ctx.config().get_remote(name)?),
+        None => &ctx.config().remotes,
     };
 
     let changed = fetch_statuses(remotes, &arcmtx);
 
-    if ctx.json {
+    if ctx.json() {
         println!("{}", serde_json::to_string_pretty(&changed)?);
     }
 

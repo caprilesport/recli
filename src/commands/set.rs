@@ -47,8 +47,8 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
-    let jobs = Jobs::load_from_db(&ctx.db_path)?;
+pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<()> {
+    let jobs = Jobs::load_from_db(ctx.db_path())?;
     let job = jobs.find_by_prefix(&args.job_id)?;
     let uuid = *job.uuid();
 
@@ -79,8 +79,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         jobs.update_tags(&uuid, &[])?;
     }
 
-    if ctx.json {
-        let jobs = Jobs::load_from_db(&ctx.db_path)?;
+    if ctx.json() {
+        let jobs = Jobs::load_from_db(ctx.db_path())?;
         let updated = jobs.find_by_prefix(&args.job_id)?;
         println!("{}", serde_json::to_string_pretty(&updated)?);
     }

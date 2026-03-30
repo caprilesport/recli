@@ -12,8 +12,6 @@ const STYLES: clap::builder::Styles = clap::builder::Styles::styled()
 use clap_complete::{Shell, generate};
 use clap_verbosity_flag::LevelFilter;
 
-use crate::config::Config;
-
 mod build_info {
     #![allow(clippy::format_push_string)]
     include!(env!("BOSION_PATH"));
@@ -22,6 +20,7 @@ use build_info::Bosion;
 
 mod commands;
 mod config;
+mod context;
 
 mod connection;
 mod job;
@@ -68,26 +67,6 @@ enum Mode {
     },
 }
 
-/// Running context of the application
-///
-/// Holds the config for all the remotes registered, as well as the database for all the submitted jobs
-struct Context {
-    config: crate::Config,
-    db_path: std::path::PathBuf,
-    json: bool,
-}
-
-impl Context {
-    fn new(json: bool) -> color_eyre::Result<Self> {
-        let config = Config::read()?;
-        Ok(Self {
-            config,
-            db_path: Config::get_dir()?.join("jobs.db"),
-            json,
-        })
-    }
-}
-
 fn main() -> color_eyre::Result<()> {
     color_eyre::config::HookBuilder::default()
         .add_issue_metadata("binary", env!("CARGO_BIN_NAME"))
@@ -117,7 +96,7 @@ fn main() -> color_eyre::Result<()> {
         return Ok(());
     }
 
-    let ctx = Context::new(cli.json)?;
+    let ctx = crate::context::Context::new(cli.json)?;
 
     match cli.mode {
         Some(Mode::Completions { shell: _ }) => unreachable!(),

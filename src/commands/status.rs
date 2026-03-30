@@ -75,9 +75,9 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
-    let display = &ctx.config.display;
-    let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
+pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<()> {
+    let display = &ctx.config().display;
+    let mut jobs = Jobs::load_from_db(ctx.db_path())?;
 
     if !args.all && display.status_window_hours > 0 {
         let cutoff = Utc::now() - Duration::hours(i64::from(display.status_window_hours));
@@ -139,7 +139,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         query.iter().collect()
     };
 
-    if ctx.json {
+    if ctx.json() {
         println!("{}", serde_json::to_string_pretty(&jobs)?);
         return Ok(());
     }

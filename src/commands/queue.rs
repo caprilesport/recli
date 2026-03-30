@@ -13,9 +13,9 @@ pub struct Args {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
+pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<()> {
     let targets: Vec<_> = if args.remotes.is_empty() {
-        ctx.config
+        ctx.config()
             .remotes
             .iter()
             .filter(|r| r.check_queue())
@@ -23,7 +23,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     } else {
         args.remotes
             .iter()
-            .map(|name| ctx.config.get_remote(name))
+            .map(|name| ctx.config().get_remote(name))
             .collect::<Result<_, _>>()?
     };
 
@@ -52,7 +52,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         }
     }
 
-    if ctx.json {
+    if ctx.json() {
         let json: Vec<_> = results
             .iter()
             .map(|(name, res)| match res {

@@ -72,11 +72,11 @@ fn resolve_companion_files(
 }
 
 #[allow(clippy::needless_pass_by_value)]
-pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
-    let remote = ctx.config.get_remote(&args.remote)?;
+pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<()> {
+    let remote = ctx.config().get_remote(&args.remote)?;
     let strategy = args
         .strategy
-        .unwrap_or_else(|| ctx.config.settings.file_strategy.clone());
+        .unwrap_or_else(|| ctx.config().settings.file_strategy.clone());
 
     // Canonicalize --files once; they are shared across all scripts in the batch.
     let shared_files: Vec<PathBuf> = args
@@ -127,7 +127,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             &work_dir,
             &script_path,
             file_stem,
-            &ctx.config.ignore,
+            &ctx.config().ignore,
         )?;
         companion_files.extend_from_slice(&shared_files);
 
@@ -153,9 +153,9 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             None,
         );
 
-        Jobs::insert_job(&ctx.db_path, &job)?;
+        Jobs::insert_job(ctx.db_path(), &job)?;
 
-        if ctx.json {
+        if ctx.json() {
             println!("{}", serde_json::to_string_pretty(&job)?);
         } else {
             info!(
