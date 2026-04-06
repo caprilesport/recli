@@ -4,7 +4,7 @@ use crate::jobs::Jobs;
 use chrono::Utc;
 use std::path::{Path, PathBuf};
 
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Debug, clap::Args)]
 /// Submits one or more jobs to a specified remote machine.
@@ -117,7 +117,16 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
                 )
             })?;
 
-        let content = std::fs::read_to_string(&script_path).unwrap_or_default();
+        let content = match std::fs::read_to_string(&script_path) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(
+                    "Failed to read script '{}', caused by: {e}, falling back to default metadata",
+                    script_path.display()
+                );
+                String::new()
+            }
+        };
         let directives = remote.queue_manager().parse_directives(&content);
         let job_name = directives.name.as_deref().unwrap_or(file_stem);
 

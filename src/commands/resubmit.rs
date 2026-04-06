@@ -2,7 +2,7 @@ use crate::job::JobStatus;
 use crate::jobs::Jobs;
 use chrono::Utc;
 use std::path::PathBuf;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Re-submits an existing job to a queue, optionally to a different remote.
 ///
@@ -59,7 +59,16 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         .collect();
 
     // Re-parse directives — the script may have been edited before resubmitting.
-    let content = std::fs::read_to_string(&script_path).unwrap_or_default();
+    let content = match std::fs::read_to_string(&script_path) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(
+                "Failed to read script '{}', caused by: {e}, falling back to default metadata",
+                script_path.display()
+            );
+            String::new()
+        }
+    };
     let directives = remote.queue_manager().parse_directives(&content);
     let file_stem = script_path
         .file_stem()
@@ -250,5 +259,35 @@ mod tests {
         let updated = jobs.find_by_prefix(&prefix).unwrap();
         assert_eq!(updated.filename(), "renamed");
         assert_eq!(updated.queue(), Some("large"));
+    }
+
+    #[test]
+    fn test_resubmit_falls_back_to_file_stem_when_no_directives_are_present() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("fallback_name.pbs");
+        std::fs::write(&script, "#!/bin/bash\n").unwrap();
+
+        let job = finished_job(script.clone());
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                remote: None,
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.filename(), "fallback_name");
+        assert_eq!(updated.queue(), None);
     }
 }
