@@ -50,9 +50,9 @@ fn resolve_companion_files(
             .map(|e| e.path())
             .filter(|p| p.is_file() && p != script_path)
             .filter(|p| {
-                p.file_name()
+                p.file_stem()
                     .and_then(std::ffi::OsStr::to_str)
-                    .is_some_and(|n| n.starts_with(file_stem))
+                    .is_some_and(|n| n == file_stem)
             })
             .collect()),
         FileStrategy::Directory => Ok(work_dir
@@ -176,6 +176,7 @@ mod tests {
     use crate::context::Context;
     use crate::job::JobStatus;
     use crate::jobs::Jobs;
+    use std::fs;
 
     fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
         let config: crate::config::Config = toml::from_str(
@@ -273,5 +274,49 @@ mod tests {
         let state = state.lock().unwrap();
         assert_eq!(state.uploads.len(), 1);
         assert!(state.uploads[0].0[0].ends_with("myjob.pbs"));
+    }
+
+    #[test]
+    fn test_resolve_companion_files_basename_uses_exact_stem() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let work_dir = tmp_dir.path();
+        let script = work_dir.join("job.pbs");
+        fs::write(&script, "#!/bin/bash\n").unwrap();
+        fs::write(work_dir.join("job.inp"), "").unwrap();
+        fs::write(work_dir.join("job.xyz"), "").unwrap();
+        fs::write(work_dir.join("job2.inp"), "").unwrap();
+        fs::write(work_dir.join("job_backup.dat"), "").unwrap();
+
+        let files = resolve_companion_files(&FileStrategy::Basename, work_dir, &script, "job", &[])
+            .unwrap();
+
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+
+        assert!(names.contains(&"job.inp".to_string()));
+        assert!(names.contains(&"job.xyz".to_string()));
+        assert!(!names.contains(&"job2.inp".to_string()));
+        assert!(!names.contains(&"job_backup.dat".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_companion_files_basename_excludes_script_itself() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let work_dir = tmp_dir.path();
+        let script = work_dir.join("job.slurm");
+        fs::write(&script, "#!/bin/bash\n").unwrap();
+        fs::write(work_dir.join("job.inp"), "").unwrap();
+
+        let files = resolve_companion_files(&FileStrategy::Basename, work_dir, &script, "job", &[])
+            .unwrap();
+
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["job.inp".to_string()]);
     }
 }
