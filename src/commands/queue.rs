@@ -74,3 +74,83 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use std::path::PathBuf;
+
+    fn make_context_with_check_queue(
+        db_path: PathBuf,
+        factory: MockFactory,
+        check_queue: bool,
+    ) -> Context {
+        let check_queue_str = if check_queue { "true" } else { "false" };
+        let toml = format!(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            check_queue = {check_queue_str}
+            "#
+        );
+        let config: crate::config::Config = toml::from_str(&toml).unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    #[test]
+    fn test_queue_explicit_remote_runs_qstat() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let (factory, state) = MockFactory::new();
+        state.lock().unwrap().set_output("qstat", "job output");
+
+        execute(
+            Args {
+                remotes: vec!["test".to_string()],
+            },
+            make_context_with_check_queue(tmp_db.path().to_path_buf(), factory, false),
+        )
+        .unwrap();
+
+        let commands = &state.lock().unwrap().commands;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0], "qstat");
+    }
+
+    #[test]
+    fn test_queue_uses_check_queue_filter() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args { remotes: vec![] },
+            make_context_with_check_queue(tmp_db.path().to_path_buf(), factory, true),
+        )
+        .unwrap();
+
+        let commands = &state.lock().unwrap().commands;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0], "qstat");
+    }
+
+    #[test]
+    fn test_queue_no_check_queue_remotes_prints_message() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args { remotes: vec![] },
+            make_context_with_check_queue(tmp_db.path().to_path_buf(), factory, false),
+        )
+        .unwrap();
+
+        // No connection made when no remotes qualify
+        assert!(state.lock().unwrap().commands.is_empty());
+    }
+}

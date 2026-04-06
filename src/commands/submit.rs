@@ -168,3 +168,110 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::JobStatus;
+    use crate::jobs::Jobs;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    #[test]
+    fn test_submit_inserts_job() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n#PBS -N testjob\n#PBS -q small\n").unwrap();
+
+        let (factory, _state) = MockFactory::new();
+        execute(
+            Args {
+                jobfiles: vec![script],
+                remote: "test".to_string(),
+                files: vec![],
+                strategy: None,
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert_eq!(jobs.len(), 1);
+        let job = &jobs[0];
+        assert_eq!(job.remote(), "test");
+        assert_eq!(job.filename(), "testjob");
+        assert_eq!(job.queue(), Some("small"));
+        assert_eq!(job.status(), &JobStatus::Queued);
+        assert!(job.sync_time().is_none());
+    }
+
+    #[test]
+    fn test_submit_falls_back_to_file_stem_when_no_name_directive() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n").unwrap();
+
+        let (factory, _state) = MockFactory::new();
+        execute(
+            Args {
+                jobfiles: vec![script],
+                remote: "test".to_string(),
+                files: vec![],
+                strategy: None,
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert_eq!(jobs[0].filename(), "myjob");
+    }
+
+    #[test]
+    fn test_submit_uploads_script() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n").unwrap();
+
+        let (factory, state) = MockFactory::new();
+        execute(
+            Args {
+                jobfiles: vec![script],
+                remote: "test".to_string(),
+                files: vec![],
+                strategy: None,
+                tags: vec![],
+            },
+            make_context(db_path, factory),
+        )
+        .unwrap();
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.uploads.len(), 1);
+        assert!(state.uploads[0].0[0].ends_with("myjob.pbs"));
+    }
+}

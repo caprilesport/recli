@@ -94,3 +94,99 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn running_job() -> Job {
+        Job::new(
+            Uuid::new_v4(),
+            "test".to_string(),
+            "12345.server".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("myjob.pbs"),
+            vec![],
+            vec![],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Running,
+            Utc::now(),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_log_default_fetches_stdout_and_stderr() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let job = running_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix,
+                pattern: None,
+            },
+            make_context(db_path, factory),
+        )
+        .unwrap();
+
+        let commands = &state.lock().unwrap().commands;
+        assert_eq!(commands.len(), 2);
+        assert!(commands[0].contains("myjob.pbs.o12345"));
+        assert!(commands[1].contains("myjob.pbs.e12345"));
+    }
+
+    #[test]
+    fn test_log_pattern_cats_named_file() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let job = running_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix,
+                pattern: Some("output.log".to_string()),
+            },
+            make_context(db_path, factory),
+        )
+        .unwrap();
+
+        let commands = &state.lock().unwrap().commands;
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].contains("output.log"));
+        assert!(commands[0].starts_with("cat "));
+    }
+}

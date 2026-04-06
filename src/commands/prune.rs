@@ -121,11 +121,214 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
         }
     }
 
-    if ctx.json() {
+    if ctx.json_output() {
         println!("{}", serde_json::to_string_pretty(&to_prune)?);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "babel"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn synced_job(remote: &str, synced_days_ago: i64) -> Job {
+        let sync_time = Utc::now() - Duration::days(synced_days_ago);
+        Job::new(
+            Uuid::new_v4(),
+            remote.to_string(),
+            "1".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("myjob.pbs"),
+            vec![],
+            vec![],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Finished,
+            Utc::now() - Duration::days(synced_days_ago + 1),
+            Some(sync_time),
+        )
+    }
+
+    fn temp_db() -> (tempfile::NamedTempFile, PathBuf) {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let p = f.path().to_path_buf();
+        (f, p)
+    }
+
+    #[test]
+    fn test_collect_by_prefix_finds_job() {
+        let (_f, path) = temp_db();
+        let job = synced_job("babel", 100);
+        Jobs::insert_job(&path, &job).unwrap();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+
+        let prefix = &job.uuid().to_string()[..7];
+        let result = collect_prunable_jobs(
+            Some(prefix.to_string()),
+            &jobs,
+            None,
+            Utc::now() - Duration::days(90),
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].uuid(), job.uuid());
+    }
+
+    #[test]
+    fn test_collect_respects_cutoff() {
+        let (_f, path) = temp_db();
+        let old_job = synced_job("babel", 100);
+        let new_job = synced_job("babel", 10);
+        Jobs::insert_job(&path, &old_job).unwrap();
+        Jobs::insert_job(&path, &new_job).unwrap();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+
+        let result =
+            collect_prunable_jobs(None, &jobs, None, Utc::now() - Duration::days(90)).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].uuid(), old_job.uuid());
+    }
+
+    #[test]
+    fn test_collect_filters_by_remote() {
+        let (_f, path) = temp_db();
+        Jobs::insert_job(&path, &synced_job("babel", 100)).unwrap();
+        Jobs::insert_job(&path, &synced_job("newton", 100)).unwrap();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+
+        let result = collect_prunable_jobs(
+            None,
+            &jobs,
+            Some("babel".to_string()),
+            Utc::now() - Duration::days(90),
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].remote(), "babel");
+    }
+
+    #[test]
+    fn test_collect_prefix_wrong_remote_errors() {
+        let (_f, path) = temp_db();
+        let job = synced_job("babel", 100);
+        Jobs::insert_job(&path, &job).unwrap();
+        let jobs = Jobs::load_from_db(&path).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let result = collect_prunable_jobs(
+            Some(prefix),
+            &jobs,
+            Some("newton".to_string()),
+            Utc::now() - Duration::days(90),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_removes_remote_dir() {
+        let (_f, db_path) = temp_db();
+        let job = synced_job("babel", 100);
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args {
+                job: Some(prefix),
+                remote: None,
+                days: None,
+                db: false,
+                execute: true,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let removals = &state.lock().unwrap().removals;
+        assert_eq!(removals.len(), 1);
+        assert_eq!(removals[0], *job.remote_dir());
+    }
+
+    #[test]
+    fn test_execute_with_db_removes_job_from_db() {
+        let (_f, db_path) = temp_db();
+        let job = synced_job("babel", 100);
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _state) = MockFactory::new();
+
+        execute(
+            Args {
+                job: Some(prefix),
+                remote: None,
+                days: None,
+                db: true,
+                execute: true,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn test_dry_run_does_not_remove_dir() {
+        let (_f, db_path) = temp_db();
+        let job = synced_job("babel", 100);
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, state) = MockFactory::new();
+
+        execute(
+            Args {
+                job: Some(prefix),
+                remote: None,
+                days: None,
+                db: false,
+                execute: false,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        assert!(state.lock().unwrap().removals.is_empty());
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert_eq!(jobs.len(), 1);
+    }
 }
 
 fn collect_prunable_jobs(

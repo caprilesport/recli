@@ -44,9 +44,23 @@ impl Context {
         &self.db_path
     }
 
-    pub fn json(&self) -> bool {
-        self.json
     pub fn json_output(&self) -> bool {
         self.json_output
+    }
+}
+
+#[cfg(test)]
+impl Context {
+    pub fn with_factory(
+        config: crate::config::Config,
+        db_path: std::path::PathBuf,
+        factory: Box<dyn ConnectionFactory>,
+    ) -> Self {
+        Self {
+            config,
+            db_path,
+            json_output: false,
+            connection_factory: factory,
+        }
     }
 }

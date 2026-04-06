@@ -41,3 +41,66 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn queued_job() -> Job {
+        Job::new(
+            Uuid::new_v4(),
+            "test".to_string(),
+            "12345.server".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("myjob.pbs"),
+            vec![],
+            vec![],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Queued,
+            Utc::now(),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_cancel_sends_qdel_command() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let job = queued_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, state) = MockFactory::new();
+
+        execute(Args { job: prefix }, make_context(db_path, factory)).unwrap();
+
+        let commands = &state.lock().unwrap().commands;
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0], format!("qdel '{}'", job.remote_id()));
+    }
+}

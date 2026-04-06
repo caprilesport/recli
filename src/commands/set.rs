@@ -87,3 +87,170 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn sample_job() -> Job {
+        Job::new(
+            Uuid::new_v4(),
+            "test".to_string(),
+            "12345.server".to_string(),
+            "myjob".to_string(),
+            PathBuf::from("myjob.pbs"),
+            vec![],
+            vec!["old-tag".to_string()],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Finished,
+            Utc::now(),
+            None,
+        )
+    }
+
+    fn temp_db() -> (tempfile::NamedTempFile, PathBuf) {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let p = f.path().to_path_buf();
+        (f, p)
+    }
+
+    #[test]
+    fn test_set_status() {
+        let (_f, db_path) = temp_db();
+        let job = sample_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                work_dir: None,
+                remote_dir: None,
+                remote: None,
+                remote_id: None,
+                script_file: None,
+                status: Some(JobStatus::Queued),
+                tags: vec![],
+                clear_tags: false,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.status(), &JobStatus::Queued);
+    }
+
+    #[test]
+    fn test_set_tags() {
+        let (_f, db_path) = temp_db();
+        let job = sample_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                work_dir: None,
+                remote_dir: None,
+                remote: None,
+                remote_id: None,
+                script_file: None,
+                status: None,
+                tags: vec!["new-tag".to_string()],
+                clear_tags: false,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.tags(), &["new-tag"]);
+    }
+
+    #[test]
+    fn test_clear_tags() {
+        let (_f, db_path) = temp_db();
+        let job = sample_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                work_dir: None,
+                remote_dir: None,
+                remote: None,
+                remote_id: None,
+                script_file: None,
+                status: None,
+                tags: vec![],
+                clear_tags: true,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert!(updated.tags().is_empty());
+    }
+
+    #[test]
+    fn test_set_remote_id() {
+        let (_f, db_path) = temp_db();
+        let job = sample_job();
+        Jobs::insert_job(&db_path, &job).unwrap();
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                work_dir: None,
+                remote_dir: None,
+                remote: None,
+                remote_id: Some("99999.server".to_string()),
+                script_file: None,
+                status: None,
+                tags: vec![],
+                clear_tags: false,
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.remote_id(), "99999.server");
+    }
+}

@@ -69,9 +69,121 @@ pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
 
     let changed = fetch_statuses(remotes, &arcmtx, &ctx);
 
-    if ctx.json() {
+    if ctx.json_output() {
         println!("{}", serde_json::to_string_pretty(&changed)?);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn queued_job(remote_id: &str) -> Job {
+        Job::new(
+            Uuid::new_v4(),
+            "test".to_string(),
+            remote_id.to_string(),
+            "myjob".to_string(),
+            PathBuf::from("myjob.pbs"),
+            vec![],
+            vec![],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Queued,
+            Utc::now(),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_fetch_updates_job_status() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+
+        let job = queued_job("12345.server");
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        // Five header lines then the data line — matches the PBS parser's skip(5)
+        let pbs_output = r#"
+ufsc:
+                                                            Req'd  Req'd   Elap
+Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
+--------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
+12345.server    testuser  small   myjob      13716*   1   8   11gb 10000 R 2345:
+"#;
+
+        let (factory, state) = MockFactory::new();
+        state
+            .lock()
+            .unwrap()
+            .set_output("qstat -u testuser -x", pbs_output);
+
+        execute(
+            Args { remote: None },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert_eq!(jobs[0].status(), &JobStatus::Running);
+    }
+
+    #[test]
+    fn test_fetch_ignores_unknown_remote_ids() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+
+        let job = queued_job("99999.server");
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        // Remote reports a job we don't track — our job should stay Queued
+        let pbs_output = r#"
+ufsc:
+                                                            Req'd  Req'd   Elap
+Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
+--------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
+12345.server    testuser  small   other      13716*   1   8   11gb 10000 R 2345:
+"#;
+
+        let (factory, state) = MockFactory::new();
+        state
+            .lock()
+            .unwrap()
+            .set_output("qstat -u testuser -x", pbs_output);
+
+        execute(
+            Args { remote: None },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        assert_eq!(jobs[0].status(), &JobStatus::Queued);
+    }
 }

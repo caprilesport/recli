@@ -470,3 +470,94 @@ impl ConnectionFactory for SshFactory {
         Ok(Box::new(connection))
     }
 }
+
+/// Shared mock infrastructure for command-level tests.
+///
+/// `MockFactory` returns a `MockConnection` that records every call and lets
+/// you pre-load per-command outputs. Tests hold an `Arc<Mutex<MockState>>`
+/// and inspect it after calling the command under test.
+#[cfg(test)]
+pub mod test_support {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    pub struct MockState {
+        pub commands: Vec<String>,
+        pub uploads: Vec<(Vec<PathBuf>, PathBuf)>,
+        pub removals: Vec<PathBuf>,
+        mock_output: HashMap<String, String>,
+    }
+
+    impl MockState {
+        pub fn new() -> Self {
+            Self {
+                commands: Vec::new(),
+                uploads: Vec::new(),
+                removals: Vec::new(),
+                mock_output: HashMap::new(),
+            }
+        }
+
+        pub fn set_output(&mut self, cmd: impl Into<String>, output: impl Into<String>) {
+            self.mock_output.insert(cmd.into(), output.into());
+        }
+    }
+
+    struct MockConnection(Arc<Mutex<MockState>>);
+
+    impl RemoteConnection for MockConnection {
+        fn execute(&self, command: &str) -> Result<String, Error> {
+            let mut s = self.0.lock().unwrap();
+            s.commands.push(command.to_string());
+            Ok(s.mock_output.get(command).cloned().unwrap_or_default())
+        }
+
+        fn mkdir(&self, _path: &Path) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn upload_files(
+            &self,
+            local_paths: &[PathBuf],
+            remote_dir: &Path,
+            _ignore: &[glob::Pattern],
+        ) -> Result<(), Error> {
+            self.0
+                .lock()
+                .unwrap()
+                .uploads
+                .push((local_paths.to_vec(), remote_dir.to_path_buf()));
+            Ok(())
+        }
+
+        fn download_files(
+            &self,
+            _remote_dir: &Path,
+            _local_dir: &Path,
+            _ignore: &[glob::Pattern],
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn remove_dir(&self, path: &Path) -> Result<(), Error> {
+            self.0.lock().unwrap().removals.push(path.to_path_buf());
+            Ok(())
+        }
+    }
+
+    pub struct MockFactory(pub Arc<Mutex<MockState>>);
+
+    impl MockFactory {
+        pub fn new() -> (Self, Arc<Mutex<MockState>>) {
+            let state = Arc::new(Mutex::new(MockState::new()));
+            (Self(state.clone()), state)
+        }
+    }
+
+    impl ConnectionFactory for MockFactory {
+        fn connect(&self, _remote: &Remote) -> Result<Box<dyn RemoteConnection>, Error> {
+            Ok(Box::new(MockConnection(self.0.clone())))
+        }
+    }
+}

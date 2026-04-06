@@ -66,7 +66,7 @@ pub struct Args {
     pub tag: Option<String>,
 
     /// Filter by queue
-    #[arg(long, short)]
+    #[arg(long)]
     pub queue: Option<String>,
 
     /// Filter by script name (substring match)

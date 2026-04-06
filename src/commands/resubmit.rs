@@ -109,3 +109,146 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::connection::test_support::MockFactory;
+    use crate::context::Context;
+    use crate::job::{Job, JobStatus};
+    use crate::jobs::Jobs;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    fn make_context(db_path: PathBuf, factory: MockFactory) -> Context {
+        let config: crate::config::Config = toml::from_str(
+            r#"
+            [[remotes]]
+            name = "test"
+            hostname = "localhost"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+
+            [[remotes]]
+            name = "other"
+            hostname = "other.host"
+            port = 22
+            user = "testuser"
+            work_directory = "/remote/work"
+            queue_manager = "Pbs"
+            "#,
+        )
+        .unwrap();
+        Context::with_factory(config, db_path, Box::new(factory))
+    }
+
+    fn finished_job(script_path: PathBuf) -> Job {
+        let sync_time = Some(Utc::now());
+        Job::new(
+            Uuid::new_v4(),
+            "test".to_string(),
+            "12345.server".to_string(),
+            "myjob".to_string(),
+            script_path.clone(),
+            vec![script_path],
+            vec![],
+            None,
+            PathBuf::from("/tmp"),
+            PathBuf::from("/remote/work/uuid"),
+            JobStatus::Finished,
+            Utc::now(),
+            sync_time,
+        )
+    }
+
+    #[test]
+    fn test_resubmit_resets_status_and_sync_time() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n").unwrap();
+
+        let job = finished_job(script.clone());
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                remote: None,
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.status(), &JobStatus::Queued);
+        assert!(updated.sync_time().is_none());
+    }
+
+    #[test]
+    fn test_resubmit_cross_remote_updates_remote_field() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n").unwrap();
+
+        let job = finished_job(script.clone());
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                remote: Some("other".to_string()),
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.remote(), "other");
+    }
+
+    #[test]
+    fn test_resubmit_reparses_directives() {
+        let tmp_db = tempfile::NamedTempFile::new().unwrap();
+        let db_path = tmp_db.path().to_path_buf();
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let script = tmp_dir.path().join("myjob.pbs");
+        std::fs::write(&script, "#!/bin/bash\n#PBS -N renamed\n#PBS -q large\n").unwrap();
+
+        let job = finished_job(script.clone());
+        Jobs::insert_job(&db_path, &job).unwrap();
+
+        let prefix = job.uuid().to_string()[..7].to_string();
+        let (factory, _state) = MockFactory::new();
+
+        execute(
+            Args {
+                job_id: prefix.clone(),
+                remote: None,
+                tags: vec![],
+            },
+            make_context(db_path.clone(), factory),
+        )
+        .unwrap();
+
+        let jobs = Jobs::load_from_db(&db_path).unwrap();
+        let updated = jobs.find_by_prefix(&prefix).unwrap();
+        assert_eq!(updated.filename(), "renamed");
+        assert_eq!(updated.queue(), Some("large"));
+    }
+}
