@@ -510,7 +510,10 @@ pub mod test_support {
         fn execute(&self, command: &str) -> Result<String, Error> {
             let mut s = self.0.lock().unwrap();
             s.commands.push(command.to_string());
-            Ok(s.mock_output.get(command).cloned().unwrap_or_default())
+            Ok(s.mock_output
+                .get(command)
+                .cloned()
+                .unwrap_or_else(|| default_output_for(command)))
         }
 
         fn mkdir(&self, _path: &Path) -> Result<(), Error> {
@@ -547,6 +550,18 @@ pub mod test_support {
     }
 
     pub struct MockFactory(pub Arc<Mutex<MockState>>);
+
+    fn default_output_for(command: &str) -> String {
+        if command.contains(" qsub ") {
+            "12345.server\n".to_string()
+        } else if command.contains(" sbatch ") {
+            "Submitted batch job 12345\n".to_string()
+        } else if command.starts_with("pueue add ") {
+            "New task added (id 2).\n".to_string()
+        } else {
+            String::new()
+        }
+    }
 
     impl MockFactory {
         pub fn new() -> (Self, Arc<Mutex<MockState>>) {

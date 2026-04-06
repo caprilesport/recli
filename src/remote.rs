@@ -15,6 +15,11 @@ pub enum Error {
     IO(#[from] std::io::Error), // #[error()]
     #[error("Invalid file stem from file: {0}")]
     InvalidFileStem(PathBuf),
+    #[error("failed to parse remote Id from output: {output}")]
+    InvalidRemoteId {
+        output: String,
+        source: crate::queuemanager::Error,
+    },
 }
 
 /// Represents a remote computational resource for job execution.
@@ -103,7 +108,10 @@ impl Remote {
 
         let command = self.queue_manager.submit_command(remote_dir, script_name);
         let output = connection.execute(&command)?;
-        let remote_id = self.queue_manager.get_id(&output);
+        let remote_id = self
+            .queue_manager
+            .get_id(&output)
+            .map_err(|e| Error::InvalidRemoteId { output, source: e })?;
 
         Ok(remote_id)
     }
@@ -289,6 +297,33 @@ mod tests {
         assert_eq!(uploaded_files[0], script);
         assert_eq!(uploaded_files[1], extra[0]);
         assert_eq!(uploaded_files[2], extra[1]);
+    }
+
+    #[test]
+    fn test_submit_errors_when_remote_id_cannot_be_parsed() {
+        let remote = Remote {
+            name: "test_remote".to_string(),
+            hostname: "localhost".to_string(),
+            port: 22,
+            user: "testuser".to_string(),
+            work_directory: PathBuf::from("/remote/work"),
+            check_queue: false,
+            queue_manager: QueueManager::Slurm,
+            identity_file: None,
+        };
+        let connection = MockConnection::new();
+        let script = Path::new("/home/user/jobs/myjob.slurm");
+        let remote_dir = Path::new("/remote/work/uuid-3");
+
+        connection.mock_output.write().unwrap().insert(
+            "cd '/remote/work/uuid-3' && sbatch 'myjob.slurm'".to_string(),
+            "Submitted batch job\n".to_string(),
+        );
+
+        let err = remote
+            .submit(script, &[], &connection, remote_dir)
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidRemoteId { .. }));
     }
 
     #[test]

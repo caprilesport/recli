@@ -8,6 +8,15 @@ use std::sync::LazyLock;
 static RE_PUEUE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"id (\d+)").unwrap());
 static RE_SLURM_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d+)").unwrap());
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Failed parsing the remote ID")]
+    InvalidRemoteId {
+        backend: &'static str,
+        output: String,
+    },
+}
+
 /// Supported queue managers
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum QueueManager {
@@ -36,17 +45,45 @@ impl QueueManager {
     /// let job_id = manager.get_id(output);
     /// assert_eq!(job_id, "12345");
     /// ```
-    pub fn get_id(&self, output: &str) -> String {
+    pub fn get_id(&self, output: &str) -> Result<String, Error> {
         match self {
-            Self::Pbs => output.trim().to_string(),
-            Self::Pueue => RE_PUEUE_ID
-                .captures(output)
-                .and_then(|caps| caps.get(1))
-                .map_or_else(String::new, |m| m.as_str().to_string()),
-            Self::Slurm => RE_SLURM_ID
-                .captures(output)
-                .and_then(|caps| caps.get(1))
-                .map_or_else(String::new, |m| m.as_str().to_string()),
+            Self::Pbs => {
+                if output.is_empty() {
+                    Err(Error::InvalidRemoteId {
+                        backend: "PBS",
+                        output: output.into(),
+                    })
+                } else {
+                    Ok(output.trim().to_string())
+                }
+            }
+            Self::Pueue => {
+                let id = RE_PUEUE_ID
+                    .captures(output)
+                    .and_then(|caps| caps.get(1))
+                    .map(|m| m.as_str().to_string());
+
+                match id {
+                    None => Err(Error::InvalidRemoteId {
+                        backend: "Pueue",
+                        output: output.into(),
+                    }),
+                    Some(id) => Ok(id),
+                }
+            }
+            Self::Slurm => {
+                let id = RE_SLURM_ID
+                    .captures(output)
+                    .and_then(|caps| caps.get(1))
+                    .map(|m| m.as_str().to_string());
+                match id {
+                    None => Err(Error::InvalidRemoteId {
+                        backend: "Slurm",
+                        output: output.into(),
+                    }),
+                    Some(id) => Ok(id),
+                }
+            }
         }
     }
 
@@ -302,13 +339,28 @@ mod tests {
     #[test]
     fn test_get_id() {
         let pbs_output = "12345.server".to_string();
-        assert_eq!(QueueManager::Pbs.get_id(&pbs_output), "12345.server");
+        assert_eq!(
+            QueueManager::Pbs.get_id(&pbs_output).unwrap(),
+            "12345.server"
+        );
 
         let pueue_output = "New task added (id 2).".to_string();
-        assert_eq!(QueueManager::Pueue.get_id(&pueue_output), "2");
+        assert_eq!(QueueManager::Pueue.get_id(&pueue_output).unwrap(), "2");
 
         let slurm_output = "Submitted batch job 67890".to_string();
-        assert_eq!(QueueManager::Slurm.get_id(&slurm_output), "67890");
+        assert_eq!(QueueManager::Slurm.get_id(&slurm_output).unwrap(), "67890");
+    }
+
+    #[test]
+    fn test_get_id_errors_for_unparseable_pueue_output() {
+        let output = "Task added successfully.".to_string();
+        assert!(QueueManager::Pueue.get_id(&output).is_err());
+    }
+
+    #[test]
+    fn test_get_id_errors_for_unparseable_slurm_output() {
+        let output = "Submitted batch job".to_string();
+        assert!(QueueManager::Slurm.get_id(&output).is_err());
     }
 
     #[test]

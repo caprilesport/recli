@@ -128,6 +128,40 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
     Ok(())
 }
 
+fn collect_prunable_jobs(
+    job: Option<String>,
+    jobs: &Jobs,
+    remote: Option<String>,
+    cutoff: DateTime<Utc>,
+) -> color_eyre::Result<Vec<Job>> {
+    let to_prune = if let Some(prefix) = job {
+        let job = jobs.find_by_prefix(&prefix)?;
+        if let Some(remote_filter) = remote
+            && job.remote() != remote_filter
+        {
+            return Err(color_eyre::eyre::eyre!(
+                "Job {} is on remote '{}', not '{}'",
+                job.short_id(),
+                job.remote(),
+                remote_filter
+            ));
+        }
+        vec![job.clone()]
+    } else {
+        let mut query = jobs.query().synced(true);
+        if let Some(remote_filter) = &remote {
+            query = query.with_remote(remote_filter);
+        }
+        query
+            .iter()
+            .filter(|j| j.sync_time().is_some_and(|t| *t < cutoff))
+            .cloned()
+            .collect()
+    };
+
+    Ok(to_prune)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,38 +363,4 @@ mod tests {
         let jobs = Jobs::load_from_db(&db_path).unwrap();
         assert_eq!(jobs.len(), 1);
     }
-}
-
-fn collect_prunable_jobs(
-    job: Option<String>,
-    jobs: &Jobs,
-    remote: Option<String>,
-    cutoff: DateTime<Utc>,
-) -> color_eyre::Result<Vec<Job>> {
-    let to_prune = if let Some(prefix) = job {
-        let job = jobs.find_by_prefix(&prefix)?;
-        if let Some(remote_filter) = remote
-            && job.remote() != remote_filter
-        {
-            return Err(color_eyre::eyre::eyre!(
-                "Job {} is on remote '{}', not '{}'",
-                job.short_id(),
-                job.remote(),
-                remote_filter
-            ));
-        }
-        vec![job.clone()]
-    } else {
-        let mut query = jobs.query().synced(true);
-        if let Some(remote_filter) = &remote {
-            query = query.with_remote(remote_filter);
-        }
-        query
-            .iter()
-            .filter(|j| j.sync_time().is_some_and(|t| *t < cutoff))
-            .cloned()
-            .collect()
-    };
-
-    Ok(to_prune)
 }
