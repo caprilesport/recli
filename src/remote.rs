@@ -20,6 +20,11 @@ pub enum Error {
         output: String,
         source: crate::queuemanager::Error,
     },
+    #[error("failed to retrieve any log sections for job '{remote_id}'")]
+    LogRetrievalFailed {
+        remote_id: String,
+        source: crate::connection::Error,
+    },
 }
 
 /// Represents a remote computational resource for job execution.
@@ -118,19 +123,44 @@ impl Remote {
 
     /// Fetches log sections for a job, returning (label, output) pairs.
     ///
-    /// Sections that fail (e.g. file not found) are silently skipped.
+    /// Sections that fail are skipped if at least one section succeeds. If all
+    /// sections fail, returns an error instead of silently returning nothing.
     pub fn logs(
         &self,
         remote_dir: &Path,
         remote_id: &str,
         script_file: &Path,
         connection: &dyn RemoteConnection,
-    ) -> Vec<(String, String)> {
-        self.queue_manager
+    ) -> Result<Vec<(String, String)>, Error> {
+        let mut sections = Vec::new();
+        let mut first_error = None;
+
+        for (label, cmd) in self
+            .queue_manager
             .log_commands(remote_dir, remote_id, script_file)
-            .into_iter()
-            .filter_map(|(label, cmd)| connection.execute(&cmd).ok().map(|output| (label, output)))
-            .collect()
+        {
+            match connection.execute(&cmd) {
+                Ok(output) => sections.push((label, output)),
+                Err(err) => {
+                    if first_error.is_none() {
+                        first_error = Some(err);
+                    }
+                }
+            }
+        }
+
+        if sections.is_empty() {
+            return Err(Error::LogRetrievalFailed {
+                remote_id: remote_id.to_string(),
+                source: first_error.unwrap_or_else(|| {
+                    crate::connection::Error::IO(std::io::Error::other(
+                        "no log commands were generated",
+                    ))
+                }),
+            });
+        }
+
+        Ok(sections)
     }
 
     /// Cancels a job on the remote queue manager.
@@ -177,6 +207,7 @@ mod tests {
         uploads: RwLock<Vec<(Vec<PathBuf>, PathBuf)>>,
         downloads: RwLock<Vec<(PathBuf, PathBuf)>>,
         mock_output: RwLock<HashMap<String, String>>,
+        mock_errors: RwLock<HashMap<String, crate::connection::Error>>,
     }
 
     impl MockConnection {
@@ -186,6 +217,7 @@ mod tests {
                 uploads: RwLock::new(Vec::new()),
                 downloads: RwLock::new(Vec::new()),
                 mock_output: RwLock::new(HashMap::new()),
+                mock_errors: RwLock::new(HashMap::new()),
             }
         }
     }
@@ -193,6 +225,9 @@ mod tests {
     impl RemoteConnection for MockConnection {
         fn execute(&self, command: &str) -> Result<String, crate::connection::Error> {
             self.commands.write().unwrap().push(command.to_string());
+            if let Some(err) = self.mock_errors.write().unwrap().remove(command) {
+                return Err(err);
+            }
             if let Some(output) = self.mock_output.read().unwrap().get(command) {
                 Ok(output.clone())
             } else {
@@ -348,5 +383,69 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses.get("12345.server"), Some(&JobStatus::Queued));
         assert_eq!(connection.commands.read().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_logs_returns_partial_success_when_one_section_fails() {
+        let remote = create_test_remote();
+        let connection = MockConnection::new();
+        let remote_dir = Path::new("/remote/work/uuid");
+        let script = Path::new("myjob.pbs");
+
+        connection.mock_output.write().unwrap().insert(
+            "cat '/remote/work/uuid/myjob.pbs.o12345'".to_string(),
+            "stdout content".to_string(),
+        );
+        connection.mock_errors.write().unwrap().insert(
+            "cat '/remote/work/uuid/myjob.pbs.e12345'".to_string(),
+            crate::connection::Error::CommandFailed {
+                command: "cat '/remote/work/uuid/myjob.pbs.e12345'".to_string(),
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "No such file".to_string(),
+            },
+        );
+
+        let sections = remote
+            .logs(remote_dir, "12345.server", script, &connection)
+            .unwrap();
+
+        assert_eq!(
+            sections,
+            vec![("stdout".to_string(), "stdout content".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_logs_errors_when_all_sections_fail() {
+        let remote = create_test_remote();
+        let connection = MockConnection::new();
+        let remote_dir = Path::new("/remote/work/uuid");
+        let script = Path::new("myjob.pbs");
+
+        connection.mock_errors.write().unwrap().insert(
+            "cat '/remote/work/uuid/myjob.pbs.o12345'".to_string(),
+            crate::connection::Error::CommandFailed {
+                command: "cat '/remote/work/uuid/myjob.pbs.o12345'".to_string(),
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "No such file".to_string(),
+            },
+        );
+        connection.mock_errors.write().unwrap().insert(
+            "cat '/remote/work/uuid/myjob.pbs.e12345'".to_string(),
+            crate::connection::Error::CommandFailed {
+                command: "cat '/remote/work/uuid/myjob.pbs.e12345'".to_string(),
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "No such file".to_string(),
+            },
+        );
+
+        let err = remote
+            .logs(remote_dir, "12345.server", script, &connection)
+            .unwrap_err();
+
+        assert!(matches!(err, Error::LogRetrievalFailed { .. }));
     }
 }

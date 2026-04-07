@@ -1,7 +1,7 @@
 use crate::jobs::Jobs;
 use std::io::{IsTerminal, Write};
 
-use tracing::{error, info};
+use tracing::error;
 
 /// Shows the log output of a job from its remote directory.
 ///
@@ -73,13 +73,8 @@ pub fn execute(args: Args, ctx: crate::context::Context) -> color_eyre::Result<(
             job.remote_id(),
             job.script_file(),
             &*connection,
-        )
+        )?
     };
-
-    if sections.is_empty() {
-        info!("No log output found for job {}.", job.short_id());
-        return Ok(());
-    }
 
     let mut stdout = std::io::stdout().lock();
     for (label, output) in &sections {
