@@ -1,172 +1,245 @@
 # recli
 
-A powerful command-line tool for submitting, monitoring, and managing
-computational jobs on remote HPC clusters and servers.
+`recli` is a command-line tool for submitting, monitoring, and retrieving
+computational jobs on remote machines. It provides one local workflow for PBS,
+Slurm, and [Pueue](https://github.com/Nukesor/pueue), keeps a persistent record
+of submitted jobs, and transfers job files over SSH.
 
-## Overview
+> [!NOTE]
+> `recli` is currently pre-release software. Test it with your environment
+> before relying on it for important workloads.
 
-recli simplifies the workflow of working with remote high-performance computing
-resources by providing:
+## Features
 
-- Easy job submission to multiple remote clusters
+- Submit one or more job scripts to PBS, Slurm, or Pueue.
+- Track jobs from multiple remotes in a local SQLite database.
+- Refresh job status and download completed job output.
+- Select synced files by differente strategies.
+- Inspect queues and logs, cancel jobs, resubmit jobs, and remove old remote data.
 
-- Real-time status monitoring across different queue managers
+## Requirements
 
-- Intelligent file synchronization that only transfers changed files
+- [Rust 1.85 or newer](https://www.rust-lang.org/tools/install) for installation
+  from source.
+- SSH access to each configured remote.
+- PBS, Slurm, or Pueue installed on the remote and available in its command
+  search path.
 
-- Unified interface for PBS, Slurm, and Pueue queue systems
+Authentication is attempted with an explicitly configured identity file, the
+SSH agent, the default `~/.ssh/id_ed25519` and `~/.ssh/id_rsa` keys, and finally
+a password prompt.
+
+For ease-of-use, it's recommended to have [automatic authentic](https://askubuntu.com/questions/46930/how-can-i-set-up-password-less-ssh-login)
+enabled for a smoother experience. 2FA workflows are not yet smoothly supported,
+but a daemon rewrite of the connection is planned.
 
 ## Installation
 
-Right now the only way to install recli is through cloning the repository.
-Ensure the [rust toolchain](https://rustup.rs/) is already installed before
-proceeding.
+Install the latest development version from GitHub:
 
 ```bash
-# Build from source
-git clone https://github.com/your-username/recli
+cargo install --git https://github.com/caprilesport/recli
+```
+
+Or build from a local clone:
+
+```bash
+git clone https://github.com/caprilesport/recli.git
 cd recli
 cargo install --path .
 ```
 
-## Quick Start
+## Configuration
 
-- Configure your remotes by editing the config file (automatically created on
-  first run):
-
-```bash
-recli status # This will create a default config if none exists
-```
-
-Submit a job to a remote cluster:
+Before running `recli`, create its configuration directory and
+`config.toml`. On Linux these are normally located at
+`~/.config/recli/config.toml`; the base configuration directory follows the
+XDG conventions for each operating system.
 
 ```bash
-recli submit --remote my-cluster simulation.inp
+mkdir -p ~/.config/recli
 ```
 
-Check the status of all jobs across configured remotes.
+Remotes are configured as an array of TOML tables.
+
+```toml
+[[remotes]]
+name = "cluster"
+hostname = "cluster.example.edu"
+port = 22
+user = "alice"
+work_directory = "/scratch/alice/recli" # where files are sent to and ran
+queue_manager = "Slurm"
+identity_file = "/home/alice/.ssh/id_ed25519"
+check_queue = true
+
+[[remotes]]
+name = "local-pueue"
+hostname = "localhost"
+port = 22
+user = "alice"
+work_directory = "/home/alice/recli-jobs"
+queue_manager = "Pueue"
+
+[settings]
+# One of: "script", "basename", or "directory".
+file_strategy = "script"
+# Minimum age since synchronization before a job is eligible for pruning.
+prune_after_days = 90
+
+[display]
+# Use 0 to show full paths.
+path_components = 3
+datetime_format = "%Y-%m-%d %H:%M"
+# Use 0 to show all tags.
+max_tags = 0
+# Use 0 to retain all synchronized jobs in the default status view.
+status_window_hours = 48
+columns = [
+  "id",
+  "work_dir",
+  "name",
+  "status",
+  "remote",
+  "queue",
+  "submit_time",
+  "sync_time",
+  "tags",
+]
+```
+
+`identity_file` and `check_queue` are optional. `check_queue` defaults to
+`false`; it controls which remotes are queried by `recli queue` when no remote
+names are supplied. Valid queue-manager values are `Pbs`, `Slurm`, and `Pueue`.
+
+### Ignore patterns
+
+Optionally create `~/.config/recli/ignore` with one glob pattern per line. These
+patterns apply when uploading with the `directory` strategy and when downloading
+job output:
+
+```text
+*.tmp
+*.checkpoint
+large-output-*
+```
+
+Pass `--all-files` to `recli pull` to ignore this file for that download.
+
+## Quick start
+
+Submit a Slurm or PBS script:
 
 ```bash
-recli status --remote specific-cluster # Filter by remote
+recli submit --remote cluster simulation.slurm
 ```
 
-Check all of the jobs statuses:
+Submit a script together with explicit input files and tags:
+
+```bash
+recli submit --remote cluster simulation.slurm \
+  --files model.inp parameters.toml \
+  --tags production benchmark
+```
+
+Refresh the locally stored status of tracked jobs:
+
+```bash
+recli fetch
+recli fetch --remote cluster
+```
+
+Display the local job database. Running `recli` without a subcommand is
+equivalent to `recli status`:
 
 ```bash
 recli status
+recli status --remote cluster --status running
+recli status --all
 ```
 
-Check for updates on all remotes and update the status of jobs.
+Download output from finished, unsynchronized jobs:
 
 ```bash
-recli fetch # check for all changes
-recli fetch --remote <remote> # fetch a single remote
+recli pull
 ```
 
-Synchronize files from remote clusters. Only transfers files that have changed
-since last sync.
+Commands accept an unambiguous prefix of the local job UUID where a job ID is
+required:
 
 ```bash
-recli sync # Sync all finished jobs
-recli sync --job-id <uuid> # Sync specific
-recli sync --sync-all-files # Ignore ignore patterns and sync everything
+recli info 7a91c2e
+recli log 7a91c2e
+recli cancel 7a91c2e
+recli resubmit 7a91c2e
+recli pull 7a91c2e
 ```
 
-Submit a job to a remote cluster. The tool automatically prepares input files,
-uploads them, and submits to the queue manager.
+Use `recli <command> --help` for all options.
 
-```bash
-recli submit --remote cluster-name input-file.inp
-```
+## Commands
 
-## Configuration
+| Command | Description |
+|---|---|
+| `status` | Show and filter jobs stored in the local database. |
+| `submit` | Upload files, submit job scripts, and record the jobs locally. |
+| `resubmit` | Resubmit a tracked job, optionally to another remote. |
+| `fetch` | Query queue managers and update locally stored statuses. |
+| `pull` | Refresh statuses and download finished, unsynchronized jobs. |
+| `queue` | Show the live queue output from selected remotes. |
+| `info` | Show the complete local record for one job. |
+| `log` | Read a job's default or explicitly selected remote log file. |
+| `cancel` | Request cancellation of a queued or running job. |
+| `prune` | Remove old remote job directories; dry-run unless `--execute` is used. |
+| `set` | Correct editable fields in a local job record. |
+| `completions` | Generate a shell completion script. |
 
-recli uses a toml configuration file located at `~/.config/recli/config.toml`
-(Linux) or equivalent platform-specific config directory.
+`status`, `info`, and other commands that do not explicitly contact a remote
+show locally cached information. Run `recli fetch` to refresh it. Cancellation
+also does not immediately change the cached status.
 
-Example configuration:
+## File selection and synchronization
 
-```toml
-[remotes.cluster1]
-hostname = "cluster.university.edu"
-port = 22
-user = "yourusername"
-work_directory = "/home/yourusername/jobs"
-queue_manager = "Slurm"
-prepare_args = ["-t", "template.q"]
+Every submitted script receives a UUID and its own directory beneath the
+remote's configured `work_directory`. The upload strategy determines which
+files accompany it:
 
-[remotes.cluster2]
-hostname = "hpc.company.com"
-port = 22
-user = "yourname"
-work_directory = "/scratch/yourname/jobs"
-queue_manager = "PBS"
-```
+- `script`: upload only the job script.
+- `basename`: also upload files in the script's directory whose names begin
+  with the same filestem.
+- `directory`: also upload all regular files in the script's directory, subject
+  to the ignore file.
 
-Beyond this, one can create an ignore file also located at
-`~/.config/recli/ignore`, in which patterns for files that should be ignored
-when syncing are checked.
+Files supplied with `--files` are added regardless of the selected strategy.
+Uploads and downloads compare modification times and skip files that do not
+appear newer.
 
-For example, to ignore any files that contain `smd`, add the folowing to
-`~/.config/recli/ignore`:
+## Local data
 
-```txt
-*smd*
-```
+Tracked jobs are stored in `jobs.db` alongside `config.toml` in the `recli`
+configuration directory. Each record includes its UUID, scheduler ID, remote,
+local and remote directories, submitted files, tags, queue, status, and submit
+and synchronization times.
 
-## Supported Queue Managers
+## Current limitations
 
-- Slurm - Popular HPC workload manager
-- PBS - Portable Batch System
-- Pueue - Modern daemon-based process manager
-
-## Features
-
-- Smart File Sync: Only transfers files that have actually changed
-- Multiple Remote Support: Manage jobs across different clusters simultaneously
-- Cross-Platform: Works on Linux, macOS, and Windows
-- Persistent Job Tracking: Maintains job database between sessions
-- Flexible Ignore Patterns: Skip unnecessary files during sync operations
-- Comprehensive Logging: Detailed output for debugging and monitoring
-
-## Job Management
-
-Jobs are automatically tracked in a local database (jobs.json). Each job is
-assigned a unique UUID and associated with:
-
-- Remote cluster
-- Submission time
-- Current status (Queued, Running, Finished, Error)
-- Sync status
-- Remote job ID
+- Each command invocation establishes a new SSH connection; persistent SSH
+  sessions are not implemented yet.
+- Queue status is parsed from the queue managers' human-readable command output,
+  which may differ between versions or cluster configurations.
+- File synchronization is based on modification times rather than content
+  hashes.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit pull requests or open
-issues for bugs and feature requests.
+Bug reports and pull requests are welcome. Before submitting a change, run:
+
+```bash
+cargo fmt -- --check
+cargo clippy --all-targets --all-features
+cargo test
+```
 
 ## License
 
-```
-MIT License
-
-Copyright (c) 2025 Vinícius C. Port       <caprilesport@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+Licensed under the [MIT License](LICENSE).
