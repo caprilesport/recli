@@ -135,13 +135,11 @@ impl SshConnection {
             .ok_or_else(|| Error::HostNameResolution(remote.hostname().to_string()))?;
         trace!("Using {} as target.", target);
 
-        let tcp = match TcpStream::connect_timeout(
-            &socket_adress,
-            std::time::Duration::from_millis(3000),
-        ) {
-            Ok(tcp) => tcp,
-            Err(_err) => return Err(Error::TimeoutToRemote(remote.name().to_owned())),
-        };
+        let tcp =
+            match TcpStream::connect_timeout(&socket_adress, std::time::Duration::from_secs(3)) {
+                Ok(tcp) => tcp,
+                Err(_err) => return Err(Error::TimeoutToRemote(remote.name().to_owned())),
+            };
         trace!("TCP Stream established, creating session");
         let mut session = Session::new()?;
         session.set_timeout(CONNECTION_TIMEOUT);

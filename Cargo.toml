@@ -26,9 +26,8 @@ tempfile = "3.20.0"
 rpassword = "7.4.0"
 clap_complete = "4.5.64"
 rusqlite = { version = "0.39.0", features = ["bundled"] }
-comfy-table = "7.2.2"
+comfy-table = { version = "7.2.2", features = ["custom_styling"] }
 color-eyre = { version = "0.6.5", features = ["issue-url"] }
 
 [build-dependencies]
 bosion = "2.0.0"
-

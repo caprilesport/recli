@@ -158,6 +158,10 @@ recli status --remote cluster --status running
 recli status --all
 ```
 
+In an interactive terminal, the green part of each ID is the shortest UUID
+prefix that uniquely identifies that job. The ID grows beyond its usual seven
+characters if more are required to distinguish it from another stored job.
+
 Download output from finished, unsynchronized jobs:
 
 ```bash
