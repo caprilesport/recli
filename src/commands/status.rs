@@ -3,6 +3,7 @@ use crate::jobs::Jobs;
 use chrono::{Duration, Utc};
 use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
 use comfy_table::{Cell, ContentArrangement, Table};
+use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use uuid::Uuid;
 
@@ -78,6 +79,7 @@ pub struct Args {
 pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let display = &ctx.config.display;
     let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
+    let unique_prefix_lengths = minimum_unique_prefix_lengths(&jobs);
 
     if !args.all && display.status_window_hours > 0 {
         let cutoff = Utc::now() - Duration::hours(i64::from(display.status_window_hours));
@@ -146,7 +148,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     let mut stdout = std::io::stdout().lock();
     let is_tty = stdout.is_terminal();
-    let table = create_status_table(jobs, args.show_id, is_tty, display);
+    let table = create_status_table(jobs, args.show_id, is_tty, display, &unique_prefix_lengths);
     writeln!(stdout, "{table}")?;
 
     Ok(())
@@ -181,8 +183,59 @@ fn fmt_tags(tags: &[String], max_tags: usize) -> String {
     format!("{}, +{remaining} more", tags[..max_tags].join(", "))
 }
 
+fn minimum_unique_prefix_lengths(jobs: &[Job]) -> HashMap<Uuid, usize> {
+    let ids: Vec<(Uuid, String)> = jobs
+        .iter()
+        .map(|job| (*job.uuid(), job.uuid().to_string()))
+        .collect();
+
+    ids.iter()
+        .map(|(uuid, id)| {
+            let shared = ids
+                .iter()
+                .filter(|(other_uuid, _)| other_uuid != uuid)
+                .map(|(_, other_id)| {
+                    id.bytes()
+                        .zip(other_id.bytes())
+                        .take_while(|(left, right)| left == right)
+                        .count()
+                })
+                .max()
+                .unwrap_or(0);
+            (*uuid, (shared + 1).min(id.len()))
+        })
+        .collect()
+}
+
+fn status_id(job: &Job, is_tty: bool, unique_prefix_lengths: &HashMap<Uuid, usize>) -> String {
+    const DEFAULT_LENGTH: usize = 7;
+    const GREEN: &str = "\x1b[32m";
+    const RESET_FOREGROUND: &str = "\x1b[39m";
+
+    let uuid = job.uuid().to_string();
+    let unique_length = unique_prefix_lengths
+        .get(job.uuid())
+        .copied()
+        .unwrap_or(DEFAULT_LENGTH);
+    let display_length = DEFAULT_LENGTH.max(unique_length).min(uuid.len());
+    let displayed = &uuid[..display_length];
+
+    if !is_tty {
+        return displayed.to_string();
+    }
+
+    let (unique, remainder) = displayed.split_at(unique_length.min(display_length));
+    format!("{GREEN}{unique}{RESET_FOREGROUND}{remainder}")
+}
+
 #[allow(clippy::needless_pass_by_value)]
-fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool, display: &Display) -> Table {
+fn create_status_table(
+    jobs: Vec<&Job>,
+    with_id: bool,
+    is_tty: bool,
+    display: &Display,
+    unique_prefix_lengths: &HashMap<Uuid, usize>,
+) -> Table {
     let mut table = Table::new();
 
     if is_tty {
@@ -207,7 +260,7 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool, display: &D
             .columns
             .iter()
             .map(|col| match col {
-                Column::Id => Cell::new(j.short_id()),
+                Column::Id => Cell::new(status_id(j, is_tty, unique_prefix_lengths)),
                 Column::WorkDir => {
                     let path = if is_tty {
                         short_path(j.work_dir(), display.path_components)
@@ -241,4 +294,80 @@ fn create_status_table(jobs: Vec<&Job>, with_id: bool, is_tty: bool, display: &D
     }
 
     table
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    fn make_job(uuid: &str) -> Job {
+        Job::new(
+            uuid.parse().unwrap(),
+            "remote".to_string(),
+            "1".to_string(),
+            "job".to_string(),
+            PathBuf::from("job.sh"),
+            vec![],
+            vec![],
+            None,
+            PathBuf::from("/work"),
+            PathBuf::from("/remote/work"),
+            JobStatus::Queued,
+            Utc::now(),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_minimum_unique_prefix_lengths() {
+        let jobs = vec![
+            make_job("a0000000-0000-0000-0000-000000000001"),
+            make_job("ab000000-0000-0000-0000-000000000002"),
+            make_job("b0000000-0000-0000-0000-000000000003"),
+        ];
+
+        let lengths = minimum_unique_prefix_lengths(&jobs);
+
+        assert_eq!(lengths[jobs[0].uuid()], 2);
+        assert_eq!(lengths[jobs[1].uuid()], 2);
+        assert_eq!(lengths[jobs[2].uuid()], 1);
+    }
+
+    #[test]
+    fn test_single_job_requires_one_character() {
+        let jobs = vec![make_job("a0000000-0000-0000-0000-000000000001")];
+
+        let lengths = minimum_unique_prefix_lengths(&jobs);
+
+        assert_eq!(lengths[jobs[0].uuid()], 1);
+    }
+
+    #[test]
+    fn test_status_id_extends_past_seven_characters() {
+        let jobs = vec![
+            make_job("aaaaaaaa-0000-0000-0000-000000000001"),
+            make_job("aaaaaaab-0000-0000-0000-000000000002"),
+        ];
+        let lengths = minimum_unique_prefix_lengths(&jobs);
+
+        assert_eq!(status_id(&jobs[0], false, &lengths), "aaaaaaaa");
+        assert_eq!(status_id(&jobs[1], false, &lengths), "aaaaaaab");
+    }
+
+    #[test]
+    fn test_status_id_colors_only_unique_prefix_on_tty() {
+        let jobs = vec![
+            make_job("a0000000-0000-0000-0000-000000000001"),
+            make_job("b0000000-0000-0000-0000-000000000002"),
+        ];
+        let lengths = minimum_unique_prefix_lengths(&jobs);
+
+        assert_eq!(
+            status_id(&jobs[0], true, &lengths),
+            "\x1b[32ma\x1b[39m000000"
+        );
+        assert_eq!(status_id(&jobs[0], false, &lengths), "a000000");
+    }
 }
