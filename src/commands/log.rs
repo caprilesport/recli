@@ -57,10 +57,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let sections: Vec<(String, String)> = if let Some(filename) = &args.pattern {
         let path = job.remote_dir().join(filename);
         let cmd = format!("cat '{}'", path.to_string_lossy().replace('\'', "'\\''"));
-        match connection.execute(&cmd) {
-            Ok(output) => vec![(filename.clone(), output)],
-            Err(e) => return Err(e.into()),
-        }
+        let output = connection.execute(&cmd)?;
+        vec![(filename.clone(), output)]
     } else {
         remote.logs(
             job.remote_dir(),
