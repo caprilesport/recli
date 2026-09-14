@@ -1,5 +1,5 @@
 use clap::builder::styling::{AnsiColor, Effects};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 const STYLES: clap::builder::Styles = clap::builder::Styles::styled()
     .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
@@ -10,6 +10,7 @@ const STYLES: clap::builder::Styles = clap::builder::Styles::styled()
     .valid(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
     .invalid(AnsiColor::Yellow.on_default().effects(Effects::BOLD));
 use clap_complete::{Shell, generate};
+use clap_complete_nushell::Nushell;
 use clap_verbosity_flag::LevelFilter;
 
 use crate::config::Config;
@@ -28,6 +29,30 @@ mod job;
 mod jobs;
 mod queuemanager;
 mod remote;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    Nushell,
+    #[value(name = "powershell")]
+    PowerShell,
+    Zsh,
+}
+
+impl CompletionShell {
+    fn generate(self, cmd: &mut clap::Command, bin_name: String) {
+        match self {
+            Self::Bash => generate(Shell::Bash, cmd, bin_name, &mut std::io::stdout()),
+            Self::Elvish => generate(Shell::Elvish, cmd, bin_name, &mut std::io::stdout()),
+            Self::Fish => generate(Shell::Fish, cmd, bin_name, &mut std::io::stdout()),
+            Self::Nushell => generate(Nushell, cmd, bin_name, &mut std::io::stdout()),
+            Self::PowerShell => generate(Shell::PowerShell, cmd, bin_name, &mut std::io::stdout()),
+            Self::Zsh => generate(Shell::Zsh, cmd, bin_name, &mut std::io::stdout()),
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, long_version = Bosion::LONG_VERSION, styles = STYLES, about = "A remote job submission and management CLI.")]
@@ -64,7 +89,7 @@ enum Mode {
     /// Generate shell completion scripts
     Completions {
         /// The shell to generate the script for
-        shell: Shell,
+        shell: CompletionShell,
     },
 }
 
@@ -113,7 +138,7 @@ fn main() -> color_eyre::Result<()> {
     if let Some(Mode::Completions { shell }) = cli.mode {
         let mut cmd = Cli::command();
         let bin_name = cmd.get_name().to_string();
-        generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+        shell.generate(&mut cmd, bin_name);
         return Ok(());
     }
 
