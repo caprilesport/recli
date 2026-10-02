@@ -242,7 +242,13 @@ impl Jobs {
     pub fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(
-            "UPDATE jobs SET status = ?1 WHERE uuid = ?2",
+            "UPDATE jobs SET
+                 sync_time = CASE
+                     WHEN status != ?1 AND ?1 IN ('F', 'E', 'U') THEN NULL
+                     ELSE sync_time
+                 END,
+                 status = ?1
+             WHERE uuid = ?2",
             params![status.as_str(), uuid.to_string()],
         )?;
         Ok(())
@@ -772,7 +778,7 @@ pub struct JobQuery<'a> {
 }
 
 impl<'a> JobQuery<'a> {
-    fn new(jobs: &'a [Job]) -> Self {
+    const fn new(jobs: &'a [Job]) -> Self {
         Self {
             jobs,
             prefix: None,
@@ -790,52 +796,52 @@ impl<'a> JobQuery<'a> {
         }
     }
 
-    pub fn with_prefix(mut self, prefix: &'a str) -> Self {
+    pub const fn with_prefix(mut self, prefix: &'a str) -> Self {
         self.prefix = Some(prefix);
         self
     }
 
-    pub fn with_uuid(mut self, id: &'a Uuid) -> Self {
+    pub const fn with_uuid(mut self, id: &'a Uuid) -> Self {
         self.uuid = Some(id);
         self
     }
 
-    pub fn synced(mut self, synced: bool) -> Self {
+    pub const fn synced(mut self, synced: bool) -> Self {
         self.synced = Some(synced);
         self
     }
 
-    pub fn with_status(mut self, status: &'a JobStatus) -> Self {
+    pub const fn with_status(mut self, status: &'a JobStatus) -> Self {
         self.status = Some(status);
         self
     }
 
-    pub fn with_remote_id(mut self, remote_id: &'a str) -> Self {
+    pub const fn with_remote_id(mut self, remote_id: &'a str) -> Self {
         self.remote_id = Some(remote_id);
         self
     }
 
-    pub fn with_remote(mut self, remote: &'a str) -> Self {
+    pub const fn with_remote(mut self, remote: &'a str) -> Self {
         self.remote = Some(remote);
         self
     }
 
-    pub fn with_name(mut self, name: &'a str) -> Self {
+    pub const fn with_name(mut self, name: &'a str) -> Self {
         self.filename = Some(name);
         self
     }
 
-    pub fn with_dir(mut self, dir: &'a str) -> Self {
+    pub const fn with_dir(mut self, dir: &'a str) -> Self {
         self.directory = Some(dir);
         self
     }
 
-    pub fn with_queue(mut self, queue: &'a str) -> Self {
+    pub const fn with_queue(mut self, queue: &'a str) -> Self {
         self.queue = Some(queue);
         self
     }
 
-    pub fn with_script(mut self, script: &'a str) -> Self {
+    pub const fn with_script(mut self, script: &'a str) -> Self {
         self.script = Some(script);
         self
     }

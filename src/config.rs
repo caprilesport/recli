@@ -10,7 +10,7 @@ use tracing::trace;
 /// For `Basename` and `Directory`, files are scanned from the **script's parent
 /// directory** (not the working directory where recli is invoked). `--files`
 /// paths are always resolved relative to the current working directory.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum FileStrategy {
     /// Upload only the job script itself. Use when input data is pre-staged
@@ -27,7 +27,7 @@ pub enum FileStrategy {
 
 /// Columns available in the `recli status` table.
 /// Configured under `[display].columns` in `config.toml`.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Column {
     Id,
@@ -42,7 +42,7 @@ pub enum Column {
 }
 
 impl Column {
-    pub fn header(&self) -> &'static str {
+    pub const fn header(&self) -> &'static str {
         match self {
             Self::Id => "ID",
             Self::WorkDir => "Work dir",
@@ -57,16 +57,16 @@ impl Column {
     }
 }
 
-fn default_path_components() -> usize {
+const fn default_path_components() -> usize {
     3
 }
 fn default_datetime_format() -> String {
     "%Y-%m-%d %H:%M".to_string()
 }
-fn default_status_window_hours() -> u32 {
+const fn default_status_window_hours() -> u32 {
     48
 }
-fn default_max_tags() -> usize {
+const fn default_max_tags() -> usize {
     0
 }
 
@@ -116,7 +116,7 @@ impl Default for Display {
     }
 }
 
-fn default_prune_days() -> u32 {
+const fn default_prune_days() -> u32 {
     90
 }
 
@@ -170,7 +170,7 @@ pub enum ConfigError {
 
 impl Config {
     pub fn read() -> Result<Self, ConfigError> {
-        let config_dir = Config::get_dir()?;
+        let config_dir = Self::get_dir()?;
         let config_file = config_dir.join("config.toml");
         trace!("Attempting to read {:?}", config_file);
         let toml_string =
@@ -179,7 +179,7 @@ impl Config {
                 source: e,
             })?;
         trace!("Parsing config file");
-        let mut config: Config = toml::from_str(&toml_string)?;
+        let mut config: Self = toml::from_str(&toml_string)?;
 
         let ignore_file = config_dir.join("ignore");
         if ignore_file.exists() {

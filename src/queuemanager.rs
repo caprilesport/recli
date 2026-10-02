@@ -9,14 +9,14 @@ static RE_PUEUE_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"id (\d+)").u
 static RE_SLURM_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d+)").unwrap());
 
 /// Supported queue managers
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QueueManager {
     Pbs,
     Slurm,
     Pueue,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ScriptDirectives {
     pub name: Option<String>,
     pub queue: Option<String>,
@@ -209,7 +209,7 @@ impl QueueManager {
     ///
     /// Intended for `recli queue` — a human-facing snapshot of what is running,
     /// not for parsing job statuses.
-    pub fn queue_command(&self) -> &'static str {
+    pub const fn queue_command(&self) -> &'static str {
         match self {
             Self::Pbs => "qstat",
             Self::Slurm => "squeue",

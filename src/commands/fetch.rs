@@ -21,7 +21,7 @@ pub struct Args {
 
 /// Fetches statuses from a slice of remotes in parallel, updates the shared
 /// job store, and returns the jobs whose status changed.
-pub(crate) fn fetch_statuses(remotes: &[Remote], arcmtx: &Arc<Mutex<Jobs>>) -> Vec<Job> {
+pub fn fetch_statuses(remotes: &[Remote], arcmtx: &Arc<Mutex<Jobs>>) -> Vec<Job> {
     let changed: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
 
     remotes.par_iter().for_each(|remote| {

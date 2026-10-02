@@ -44,7 +44,7 @@ pub struct Job {
 
 impl Job {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         uuid: Uuid,
         remote: String,
         remote_id: String,
@@ -76,7 +76,7 @@ impl Job {
         }
     }
 
-    pub fn uuid(&self) -> &Uuid {
+    pub const fn uuid(&self) -> &Uuid {
         &self.uuid
     }
 
@@ -104,15 +104,15 @@ impl Job {
         &self.remote_id
     }
 
-    pub fn submit_time(&self) -> &DateTime<Utc> {
+    pub const fn submit_time(&self) -> &DateTime<Utc> {
         &self.submit_time
     }
 
-    pub fn work_dir(&self) -> &PathBuf {
+    pub const fn work_dir(&self) -> &PathBuf {
         &self.work_dir
     }
 
-    pub fn remote_dir(&self) -> &PathBuf {
+    pub const fn remote_dir(&self) -> &PathBuf {
         &self.remote_dir
     }
 
@@ -120,11 +120,11 @@ impl Job {
         &self.remote
     }
 
-    pub fn synced(&self) -> bool {
-        self.sync_time.is_some()
+    pub const fn synced(&self) -> bool {
+        self.sync_time.is_some() && !matches!(self.status, JobStatus::Queued | JobStatus::Running)
     }
 
-    pub fn status(&self) -> &JobStatus {
+    pub const fn status(&self) -> &JobStatus {
         &self.status
     }
 
@@ -132,11 +132,15 @@ impl Job {
         &self.filename
     }
 
-    pub fn sync_time(&self) -> Option<&DateTime<Utc>> {
+    pub const fn sync_time(&self) -> Option<&DateTime<Utc>> {
         self.sync_time.as_ref()
     }
 
     pub fn set_status(&mut self, status: JobStatus) {
+        if self.status != status && !matches!(status, JobStatus::Queued | JobStatus::Running) {
+            // A download made before completion is not a final synchronization.
+            self.sync_time = None;
+        }
         self.status = status;
     }
 }
@@ -151,7 +155,9 @@ impl Job {
 /// The `Undefined` variant is reserved for all status that are encountered and are not defined here. This may happen mainly with different PBS versions and some status for SLURM that are currently not implemented.
 // TODO: complete this with all possible variants encoutered in the Queue managers we support.
 // Slurm, for instance, has several status descriptions which could be usefull
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Copy, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Copy, clap::ValueEnum,
+)]
 pub enum JobStatus {
     Queued,
     Running,
@@ -161,7 +167,7 @@ pub enum JobStatus {
 }
 
 impl JobStatus {
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "Q",
             Self::Finished => "F",

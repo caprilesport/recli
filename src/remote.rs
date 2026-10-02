@@ -48,7 +48,7 @@ impl Remote {
         &self.hostname
     }
 
-    pub fn port(&self) -> u16 {
+    pub const fn port(&self) -> u16 {
         self.port
     }
 
@@ -67,11 +67,11 @@ impl Remote {
         self.identity_file.clone()
     }
 
-    pub fn queue_manager(&self) -> &QueueManager {
+    pub const fn queue_manager(&self) -> &QueueManager {
         &self.queue_manager
     }
 
-    pub fn check_queue(&self) -> bool {
+    pub const fn check_queue(&self) -> bool {
         self.check_queue
     }
 

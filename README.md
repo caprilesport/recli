@@ -198,6 +198,13 @@ Use `recli <command> --help` for all options.
 | `set` | Correct editable fields in a local job record. |
 | `completions` | Generate a shell completion script. |
 
+Generate and load Nushell completions with:
+
+```nu
+recli completions nushell | save --force ~/.cache/recli-completions.nu
+use ~/.cache/recli-completions.nu *
+```
+
 `status`, `info`, and other commands that do not explicitly contact a remote
 show locally cached information. Run `recli fetch` to refresh it. Cancellation
 also does not immediately change the cached status.
