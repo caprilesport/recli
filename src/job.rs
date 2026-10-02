@@ -121,7 +121,7 @@ impl Job {
     }
 
     pub fn synced(&self) -> bool {
-        self.sync_time.is_some()
+        self.sync_time.is_some() && !matches!(self.status, JobStatus::Queued | JobStatus::Running)
     }
 
     pub fn status(&self) -> &JobStatus {
@@ -137,6 +137,10 @@ impl Job {
     }
 
     pub fn set_status(&mut self, status: JobStatus) {
+        if self.status != status && !matches!(status, JobStatus::Queued | JobStatus::Running) {
+            // A download made before completion is not a final synchronization.
+            self.sync_time = None;
+        }
         self.status = status;
     }
 }

@@ -242,7 +242,13 @@ impl Jobs {
     pub fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(
-            "UPDATE jobs SET status = ?1 WHERE uuid = ?2",
+            "UPDATE jobs SET
+                 sync_time = CASE
+                     WHEN status != ?1 AND ?1 IN ('F', 'E', 'U') THEN NULL
+                     ELSE sync_time
+                 END,
+                 status = ?1
+             WHERE uuid = ?2",
             params![status.as_str(), uuid.to_string()],
         )?;
         Ok(())
