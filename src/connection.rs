@@ -148,8 +148,8 @@ impl SshConnection {
             remote: remote.name().to_string(),
             source: e,
         })?;
-        SshConnection::authenticate(&mut session, remote.user(), remote)?;
-        Ok(SshConnection { session })
+        Self::authenticate(&mut session, remote.user(), remote)?;
+        Ok(Self { session })
     }
 
     fn authenticate(
@@ -158,22 +158,22 @@ impl SshConnection {
         remote: &Remote,
     ) -> Result<(), Error> {
         if let Some(key) = remote.identity_file()
-            && SshConnection::try_pubkey_auth(sess, username, &key).is_ok()
+            && Self::try_pubkey_auth(sess, username, &key).is_ok()
         {
             return Ok(());
         }
 
-        if SshConnection::try_agent_auth(sess, username).is_err() {
+        if Self::try_agent_auth(sess, username).is_err() {
             debug!(
                 "Agent authentication failed @ {} or agent not running.",
                 remote.name()
             );
-            if SshConnection::try_default_pubkey_auth(sess, username).is_err() {
+            if Self::try_default_pubkey_auth(sess, username).is_err() {
                 debug!(
                     "Default public key authentication failed @ {}.",
                     remote.name()
                 );
-                if SshConnection::try_password_auth(sess, username).is_err() {
+                if Self::try_password_auth(sess, username).is_err() {
                     debug!("Password authentication also failed.");
                     return Err(Error::AuthFailed {
                         user: username.to_string(),
@@ -224,7 +224,7 @@ impl SshConnection {
             let key_path = Path::new(&home).join(".ssh").join(key_file);
             debug!("Trying default key: {:?}", key_path);
             if key_path.exists()
-                && SshConnection::try_pubkey_auth(sess, username, &key_path).is_ok()
+                && Self::try_pubkey_auth(sess, username, &key_path).is_ok()
             {
                 return Ok(());
             }

@@ -14,7 +14,7 @@ use crate::job::JobStatus;
 use comfy_table::{Attribute, Cell, Color};
 
 #[must_use]
-pub(crate) fn status_cell(status: JobStatus, is_tty: bool) -> Cell {
+pub fn status_cell(status: JobStatus, is_tty: bool) -> Cell {
     let (text, color, bold) = match status {
         JobStatus::Queued => ("Queued", Color::Yellow, false),
         JobStatus::Running => ("Running", Color::Cyan, true),
