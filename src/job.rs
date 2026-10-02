@@ -141,6 +141,7 @@ impl Job {
             // A download made before completion is not a final synchronization.
             self.sync_time = None;
         }
+        self.status = status;
     }
 }
 
