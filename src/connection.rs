@@ -223,9 +223,7 @@ impl SshConnection {
         for key_file in &key_files {
             let key_path = Path::new(&home).join(".ssh").join(key_file);
             debug!("Trying default key: {:?}", key_path);
-            if key_path.exists()
-                && Self::try_pubkey_auth(sess, username, &key_path).is_ok()
-            {
+            if key_path.exists() && Self::try_pubkey_auth(sess, username, &key_path).is_ok() {
                 return Ok(());
             }
         }
