@@ -775,7 +775,7 @@ mod tests {
         let uuid2 = "aaaaaaaa-0000-0000-0000-000000000002"
             .parse::<Uuid>()
             .unwrap();
-        let job1 = Job::new(
+        let first_job = Job::new(
             uuid1,
             "babel".to_string(),
             "1".to_string(),
@@ -791,7 +791,7 @@ mod tests {
             None,
             None,
         );
-        let job2 = Job::new(
+        let second_job = Job::new(
             uuid2,
             "babel".to_string(),
             "2".to_string(),
@@ -807,8 +807,8 @@ mod tests {
             None,
             None,
         );
-        Jobs::insert_job(&path, &job1).unwrap();
-        Jobs::insert_job(&path, &job2).unwrap();
+        Jobs::insert_job(&path, &first_job).unwrap();
+        Jobs::insert_job(&path, &second_job).unwrap();
 
         let jobs = Jobs::load_from_db(&path).unwrap();
         let err = jobs.find_by_prefix("aaaaaaa").unwrap_err();
