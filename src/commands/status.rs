@@ -94,8 +94,8 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         query = query.with_prefix(prefix);
     }
 
-    if let Some(uuid) = args.uuid {
-        query.with_uuid(&uuid);
+    if let Some(uuid) = &args.uuid {
+        query = query.with_uuid(uuid);
     }
 
     if let Some(name) = &args.name {
