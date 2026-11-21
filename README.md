@@ -263,7 +263,7 @@ Bug reports and pull requests are welcome. Before submitting a change, run:
 
 ```bash
 cargo fmt --check
-cargo clippy -- -D clippy::pedantic
+cargo clippy --all-targets -- -D clippy::pedantic
 cargo test
 ```
 

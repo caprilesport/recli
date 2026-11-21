@@ -22,7 +22,7 @@ jobs:
         run: cargo fmt --check
 
       - name: clippy
-        run: cargo clippy -- -D clippy::pedantic
+        run: cargo clippy --all-targets -- -D clippy::pedantic
 
       - name: test
         run: cargo test
