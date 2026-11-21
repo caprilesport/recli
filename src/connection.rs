@@ -1,8 +1,9 @@
 use crate::remote::Remote;
-use ssh2::Session;
+use ssh2::{Session, Sftp};
 use std::io::prelude::*;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::sync::{Condvar, Mutex};
 
 use tracing::{debug, trace};
 
@@ -120,8 +121,115 @@ pub trait RemoteConnection {
     fn remove_dir(&self, path: &Path) -> Result<(), Error>;
 }
 
+/// libssh2's `LIBSSH2_ERROR_CHANNEL_FAILURE`: the server refused to open a channel.
+///
+/// `sshd` caps open channels per connection (`MaxSessions`, 10 by default), and
+/// reports it with this code for SFTP and exec channels alike.
+const CHANNEL_FAILURE: i32 = -21;
+
+fn is_channel_limit(err: &ssh2::Error) -> bool {
+    err.code() == ssh2::ErrorCode::Session(CHANNEL_FAILURE)
+}
+
+#[derive(Debug)]
+struct PoolState<T> {
+    idle: Vec<T>,
+    /// Channels handed out or idle, plus opens in progress.
+    open: usize,
+    /// Learned from the server the first time it refuses a channel.
+    limit: Option<usize>,
+}
+
+/// A pool of channels on one SSH connection, shared by parallel operations.
+///
+/// Channels are reused across operations. New ones are opened on demand until the
+/// server refuses one; from then on the pool stays at that size, and callers wait
+/// for a channel to be released instead of failing.
+#[derive(Debug)]
+struct ChannelPool<T> {
+    state: Mutex<PoolState<T>>,
+    released: Condvar,
+}
+
+impl<T> ChannelPool<T> {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new(PoolState {
+                idle: Vec::new(),
+                open: 0,
+                limit: None,
+            }),
+            released: Condvar::new(),
+        }
+    }
+
+    fn acquire(&self, open: impl Fn() -> Result<T, ssh2::Error>) -> Result<T, ssh2::Error> {
+        let mut state = self.state.lock().unwrap();
+        loop {
+            if let Some(channel) = state.idle.pop() {
+                return Ok(channel);
+            }
+            if state.limit.is_none_or(|limit| state.open < limit) {
+                // Reserve a slot, and open without holding the lock so releases can proceed.
+                state.open += 1;
+                drop(state);
+                let result = open();
+                state = self.state.lock().unwrap();
+                match result {
+                    Ok(channel) => return Ok(channel),
+                    Err(e) => {
+                        state.open -= 1;
+                        self.released.notify_one();
+                        if !is_channel_limit(&e) || state.open == 0 {
+                            return Err(e);
+                        }
+                        let limit = state.limit.map_or(state.open, |l| l.min(state.open));
+                        debug!("Server refused a new channel; using at most {limit}");
+                        state.limit = Some(limit);
+                        continue;
+                    }
+                }
+            }
+            state = self.released.wait(state).unwrap();
+        }
+    }
+
+    fn release(&self, channel: T) {
+        self.state.lock().unwrap().idle.push(channel);
+        self.released.notify_one();
+    }
+
+    /// Drops a channel that may be broken, freeing its slot.
+    fn discard(&self, channel: T) {
+        drop(channel);
+        self.state.lock().unwrap().open -= 1;
+        self.released.notify_one();
+    }
+
+    /// Runs `f` with a channel from the pool. On error the channel is discarded, since
+    /// it may be in a bad state.
+    fn with<R, E: From<ssh2::Error>>(
+        &self,
+        open: impl Fn() -> Result<T, ssh2::Error>,
+        f: impl FnOnce(&T) -> Result<R, E>,
+    ) -> Result<R, E> {
+        let channel = self.acquire(open)?;
+        match f(&channel) {
+            Ok(value) => {
+                self.release(channel);
+                Ok(value)
+            }
+            Err(e) => {
+                self.discard(channel);
+                Err(e)
+            }
+        }
+    }
+}
+
 pub struct SshConnection {
     session: Session,
+    sftp: ChannelPool<Sftp>,
 }
 
 impl SshConnection {
@@ -149,7 +257,14 @@ impl SshConnection {
             source: e,
         })?;
         Self::authenticate(&mut session, remote.user(), remote)?;
-        Ok(Self { session })
+        Ok(Self {
+            session,
+            sftp: ChannelPool::new(),
+        })
+    }
+
+    fn with_sftp<R>(&self, f: impl FnOnce(&Sftp) -> Result<R, Error>) -> Result<R, Error> {
+        self.sftp.with(|| self.session.sftp(), f)
     }
 
     fn authenticate(
@@ -330,18 +445,19 @@ impl RemoteConnection for SshConnection {
     }
 
     fn mkdir(&self, path: &Path) -> Result<(), Error> {
-        let sftp = self.session.sftp()?;
-        if sftp.stat(path).is_ok() {
-            debug!("Directory already exists, skipping: {:?}", path);
-        } else {
-            debug!("Creating directory {:?}", path);
-            sftp.mkdir(path, 0o755).map_err(|e| Error::SftpOperation {
-                operation: "mkdir",
-                path: path.to_path_buf(),
-                source: e,
-            })?;
-        }
-        Ok(())
+        self.with_sftp(|sftp| {
+            if sftp.stat(path).is_ok() {
+                debug!("Directory already exists, skipping: {:?}", path);
+            } else {
+                debug!("Creating directory {:?}", path);
+                sftp.mkdir(path, 0o755).map_err(|e| Error::SftpOperation {
+                    operation: "mkdir",
+                    path: path.to_path_buf(),
+                    source: e,
+                })?;
+            }
+            Ok(())
+        })
     }
 
     fn upload_files(
@@ -350,53 +466,54 @@ impl RemoteConnection for SshConnection {
         remote_dir: &Path,
         ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
-        let sftp = self.session.sftp()?;
-        let remote_files: std::collections::HashMap<String, u64> = sftp
-            .readdir(remote_dir)
-            .map_err(|e| Error::SftpOperation {
-                operation: "readdir",
-                path: remote_dir.to_path_buf(),
-                source: e,
-            })?
-            .into_iter()
-            .filter_map(|(path, stat)| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .map(|name| (name.to_string(), stat.mtime.unwrap_or(0)))
-            })
-            .collect();
+        self.with_sftp(|sftp| {
+            let remote_files: std::collections::HashMap<String, u64> = sftp
+                .readdir(remote_dir)
+                .map_err(|e| Error::SftpOperation {
+                    operation: "readdir",
+                    path: remote_dir.to_path_buf(),
+                    source: e,
+                })?
+                .into_iter()
+                .filter_map(|(path, stat)| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| (name.to_string(), stat.mtime.unwrap_or(0)))
+                })
+                .collect();
 
-        for file_path in local_paths {
-            if ignore.iter().any(|p| p.matches_path(file_path)) {
-                debug!("Ignoring {:?} due to ignore pattern", file_path);
-                continue;
-            }
+            for file_path in local_paths {
+                if ignore.iter().any(|p| p.matches_path(file_path)) {
+                    debug!("Ignoring {:?} due to ignore pattern", file_path);
+                    continue;
+                }
 
-            if Self::should_upload_file(file_path, &remote_files)? {
-                debug!("Uploading {:?} to {:?}", file_path, remote_dir);
-                let mut local_file =
-                    std::fs::File::open(file_path).map_err(|e| Error::LocalFile {
-                        path: file_path.clone(),
-                        source: e,
-                    })?;
-                let file_name = file_path.file_name().ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Path does not have a file name",
-                    )
-                })?;
-                let remote_path = remote_dir.join(file_name);
-                let mut remote_file =
-                    sftp.create(remote_path.as_path())
-                        .map_err(|e| Error::SftpOperation {
-                            operation: "create",
-                            path: remote_path.clone(),
+                if Self::should_upload_file(file_path, &remote_files)? {
+                    debug!("Uploading {:?} to {:?}", file_path, remote_dir);
+                    let mut local_file =
+                        std::fs::File::open(file_path).map_err(|e| Error::LocalFile {
+                            path: file_path.clone(),
                             source: e,
                         })?;
-                std::io::copy(&mut local_file, &mut remote_file)?;
+                    let file_name = file_path.file_name().ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Path does not have a file name",
+                        )
+                    })?;
+                    let remote_path = remote_dir.join(file_name);
+                    let mut remote_file =
+                        sftp.create(remote_path.as_path())
+                            .map_err(|e| Error::SftpOperation {
+                                operation: "create",
+                                path: remote_path.clone(),
+                                source: e,
+                            })?;
+                    std::io::copy(&mut local_file, &mut remote_file)?;
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn download_files(
@@ -405,40 +522,41 @@ impl RemoteConnection for SshConnection {
         local_dir: &Path,
         ignore: &[glob::Pattern],
     ) -> Result<(), Error> {
-        let sftp = self.session.sftp()?;
-        for entry in sftp.readdir(remote_dir).map_err(|e| Error::SftpOperation {
-            operation: "readdir",
-            path: remote_dir.to_path_buf(),
-            source: e,
-        })? {
-            let (remote_path, stat) = entry;
-            if ignore.iter().any(|p| p.matches_path(&remote_path)) {
-                debug!("Ignoring {:?} due to ignore pattern", &remote_path);
-                continue;
-            }
-            if stat.is_file() {
-                let file_name = remote_path
-                    .file_name()
-                    .ok_or_else(|| Error::InvalidPath(remote_path.clone()))?;
-                let local_path = local_dir.join(file_name);
-                if Self::should_download_file(&stat, &local_path)? {
-                    let mut remote_file =
-                        sftp.open(&remote_path).map_err(|e| Error::SftpOperation {
-                            operation: "open",
-                            path: remote_path.clone(),
-                            source: e,
-                        })?;
-                    let mut local_file =
-                        std::fs::File::create(&local_path).map_err(|e| Error::LocalFile {
-                            path: local_path.clone(),
-                            source: e,
-                        })?;
-                    debug!("Downloading {:?}", remote_path);
-                    std::io::copy(&mut remote_file, &mut local_file)?;
+        self.with_sftp(|sftp| {
+            for entry in sftp.readdir(remote_dir).map_err(|e| Error::SftpOperation {
+                operation: "readdir",
+                path: remote_dir.to_path_buf(),
+                source: e,
+            })? {
+                let (remote_path, stat) = entry;
+                if ignore.iter().any(|p| p.matches_path(&remote_path)) {
+                    debug!("Ignoring {:?} due to ignore pattern", &remote_path);
+                    continue;
+                }
+                if stat.is_file() {
+                    let file_name = remote_path
+                        .file_name()
+                        .ok_or_else(|| Error::InvalidPath(remote_path.clone()))?;
+                    let local_path = local_dir.join(file_name);
+                    if Self::should_download_file(&stat, &local_path)? {
+                        let mut remote_file =
+                            sftp.open(&remote_path).map_err(|e| Error::SftpOperation {
+                                operation: "open",
+                                path: remote_path.clone(),
+                                source: e,
+                            })?;
+                        let mut local_file =
+                            std::fs::File::create(&local_path).map_err(|e| Error::LocalFile {
+                                path: local_path.clone(),
+                                source: e,
+                            })?;
+                        debug!("Downloading {:?}", remote_path);
+                        std::io::copy(&mut remote_file, &mut local_file)?;
+                    }
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn remove_dir(&self, path: &Path) -> Result<(), Error> {
@@ -446,5 +564,126 @@ impl RemoteConnection for SshConnection {
         let quoted = format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
         self.execute(&format!("rm -rf {quoted}"))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Barrier;
+
+    /// Opens numbered fake channels, refusing like `sshd` once `limit` are open.
+    struct FakeServer {
+        limit: usize,
+        open: AtomicUsize,
+        max_seen: AtomicUsize,
+        opened_total: AtomicUsize,
+    }
+
+    impl FakeServer {
+        fn new(limit: usize) -> Self {
+            Self {
+                limit,
+                open: AtomicUsize::new(0),
+                max_seen: AtomicUsize::new(0),
+                opened_total: AtomicUsize::new(0),
+            }
+        }
+
+        fn open(&self) -> Result<usize, ssh2::Error> {
+            let n = self.open.fetch_add(1, Ordering::SeqCst) + 1;
+            if n > self.limit {
+                self.open.fetch_sub(1, Ordering::SeqCst);
+                return Err(ssh2::Error::new(
+                    ssh2::ErrorCode::Session(CHANNEL_FAILURE),
+                    "Unable to startup channel",
+                ));
+            }
+            self.max_seen.fetch_max(n, Ordering::SeqCst);
+            Ok(self.opened_total.fetch_add(1, Ordering::SeqCst))
+        }
+    }
+
+    #[test]
+    fn test_pool_stays_within_server_limit() {
+        let server = FakeServer::new(3);
+        let pool = ChannelPool::new();
+        let done = AtomicUsize::new(0);
+        let start = Barrier::new(16);
+
+        std::thread::scope(|s| {
+            for _ in 0..16 {
+                s.spawn(|| {
+                    start.wait();
+                    pool.with(
+                        || server.open(),
+                        |_| -> Result<(), ssh2::Error> {
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            done.fetch_add(1, Ordering::SeqCst);
+                            Ok(())
+                        },
+                    )
+                    .unwrap();
+                });
+            }
+        });
+
+        assert_eq!(done.load(Ordering::SeqCst), 16);
+        assert_eq!(server.max_seen.load(Ordering::SeqCst), 3);
+        assert_eq!(pool.state.lock().unwrap().limit, Some(3));
+    }
+
+    #[test]
+    fn test_pool_reuses_released_channels() {
+        let server = FakeServer::new(10);
+        let pool = ChannelPool::new();
+        for _ in 0..5 {
+            pool.with(|| server.open(), |_| Ok::<_, ssh2::Error>(()))
+                .unwrap();
+        }
+        assert_eq!(server.opened_total.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_pool_refused_first_channel_is_an_error() {
+        let server = FakeServer::new(0);
+        let pool = ChannelPool::new();
+        let err = pool
+            .with(|| server.open(), |_| Ok::<_, ssh2::Error>(()))
+            .unwrap_err();
+        assert!(is_channel_limit(&err));
+    }
+
+    #[test]
+    fn test_pool_other_open_errors_are_returned() {
+        let pool: ChannelPool<usize> = ChannelPool::new();
+        let err = pool
+            .with(
+                || {
+                    Err(ssh2::Error::new(
+                        ssh2::ErrorCode::Session(-7),
+                        "Socket send",
+                    ))
+                },
+                |_| Ok::<_, ssh2::Error>(()),
+            )
+            .unwrap_err();
+        assert_eq!(err.code(), ssh2::ErrorCode::Session(-7));
+        assert_eq!(pool.state.lock().unwrap().open, 0);
+    }
+
+    #[test]
+    fn test_pool_discards_channel_after_failed_operation() {
+        let server = FakeServer::new(10);
+        let pool = ChannelPool::new();
+        let result = pool.with(
+            || server.open(),
+            |_| Err::<(), _>(ssh2::Error::new(ssh2::ErrorCode::Session(-31), "SFTP")),
+        );
+        assert!(result.is_err());
+        let state = pool.state.lock().unwrap();
+        assert!(state.idle.is_empty());
+        assert_eq!(state.open, 0);
     }
 }
