@@ -763,7 +763,7 @@ mod tests {
 #[derive(Copy, Clone)]
 pub struct JobQuery<'a> {
     jobs: &'a [Job],
-    prefix: Option<&'a str>,
+    prefixes: &'a [String],
     uuid: Option<&'a Uuid>,
     synced: Option<bool>,
     status: Option<&'a JobStatus>,
@@ -781,7 +781,7 @@ impl<'a> JobQuery<'a> {
     const fn new(jobs: &'a [Job]) -> Self {
         Self {
             jobs,
-            prefix: None,
+            prefixes: &[],
             uuid: None,
             synced: None,
             status: None,
@@ -796,8 +796,9 @@ impl<'a> JobQuery<'a> {
         }
     }
 
-    pub const fn with_prefix(mut self, prefix: &'a str) -> Self {
-        self.prefix = Some(prefix);
+    /// Matches jobs whose UUID starts with any of `prefixes`. An empty slice matches all.
+    pub const fn with_prefixes(mut self, prefixes: &'a [String]) -> Self {
+        self.prefixes = prefixes;
         self
     }
 
@@ -860,7 +861,7 @@ impl<'a> JobQuery<'a> {
     pub fn iter(self) -> impl Iterator<Item = &'a Job> {
         let Self {
             jobs,
-            prefix,
+            prefixes,
             uuid,
             synced,
             status,
@@ -875,7 +876,10 @@ impl<'a> JobQuery<'a> {
         } = self;
 
         jobs.iter().filter(move |job| {
-            let prefix_match = prefix.is_none_or(|p| job.uuid().to_string().starts_with(p));
+            let prefix_match = prefixes.is_empty() || {
+                let id = job.uuid().to_string();
+                prefixes.iter().any(|p| id.starts_with(p.as_str()))
+            };
             let uuid_match = uuid.is_none_or(|id| id == job.uuid());
             let synced_match = synced.is_none_or(|synced| synced == job.synced());
             let status_match = status.is_none_or(|st| st == job.status());

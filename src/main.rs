@@ -131,7 +131,11 @@ fn main() -> color_eyre::Result<()> {
         LevelFilter::Trace => tracing_subscriber::filter::LevelFilter::TRACE,
         LevelFilter::Debug => tracing_subscriber::filter::LevelFilter::DEBUG,
     };
-    tracing_subscriber::fmt().with_max_level(loglevel).init();
+    // Logs go to stderr so `--json` output on stdout stays machine-readable.
+    tracing_subscriber::fmt()
+        .with_max_level(loglevel)
+        .with_writer(std::io::stderr)
+        .init();
 
     // We match the completions early, as if there is no config file yet we can generate
     // the completions with no problem.

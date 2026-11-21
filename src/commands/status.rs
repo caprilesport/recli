@@ -5,6 +5,7 @@ use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
 use comfy_table::{Cell, ContentArrangement, Table};
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::job::{Job, JobStatus};
@@ -26,9 +27,9 @@ pub struct Args {
     #[arg(long, action)]
     pub show_id: bool,
 
-    /// Filter by UUID prefix
+    /// Filter by UUID prefix (repeatable; matches any)
     #[arg(long, short)]
-    pub id: Option<String>,
+    pub id: Vec<String>,
 
     /// Filter by uuid
     #[arg(long, short)]
@@ -81,18 +82,25 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
     let mut jobs = Jobs::load_from_db(&ctx.db_path)?;
     let unique_prefix_lengths = minimum_unique_prefix_lengths(&jobs);
 
-    if !args.all && display.status_window_hours > 0 {
+    for prefix in &args.id {
+        if !jobs
+            .iter()
+            .any(|j| j.uuid().to_string().starts_with(prefix.as_str()))
+        {
+            warn!("No job found matching prefix '{prefix}'");
+        }
+    }
+
+    // Jobs asked for by ID are always shown, regardless of the status window.
+    let explicit_ids = !args.id.is_empty() || args.uuid.is_some();
+    if !args.all && !explicit_ids && display.status_window_hours > 0 {
         let cutoff = Utc::now() - Duration::hours(i64::from(display.status_window_hours));
         jobs.retain(|j| {
             !j.synced() || (j.synced() && j.sync_time().is_some_and(|st| *st > cutoff))
         });
     }
 
-    let mut query = jobs.query();
-
-    if let Some(prefix) = &args.id {
-        query = query.with_prefix(prefix);
-    }
+    let mut query = jobs.query().with_prefixes(&args.id);
 
     if let Some(uuid) = &args.uuid {
         query = query.with_uuid(uuid);
