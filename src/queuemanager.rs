@@ -106,22 +106,28 @@ impl QueueManager {
                 }
             }
             Self::Slurm => {
-                for line in output.lines().skip(2) {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() < 5 {
+                // Expects `sacct --parsable2 --noheader --format=JobID,State` output.
+                for line in output.lines() {
+                    let Some((job_id, state)) = line.split_once('|') else {
+                        continue;
+                    };
+                    let job_id = job_id.trim();
+                    if job_id.is_empty() {
                         continue;
                     }
-                    let job_id = parts[0].to_string();
-                    let status = parts[4].to_string();
-                    let job_status = match status.as_str() {
-                        "PENDING" => JobStatus::Queued,
-                        "RUNNING" => JobStatus::Running,
+                    // State may carry a suffix, e.g. "CANCELLED by 1000".
+                    let state = state.split_whitespace().next().unwrap_or("");
+                    let job_status = match state.trim_end_matches('+') {
+                        "PENDING" | "REQUEUED" | "REQUEUE_FED" | "REQUEUE_HOLD"
+                        | "RESV_DEL_HOLD" => JobStatus::Queued,
+                        "RUNNING" | "COMPLETING" | "CONFIGURING" | "RESIZING" | "SIGNALING"
+                        | "STAGE_OUT" | "SUSPENDED" | "STOPPED" => JobStatus::Running,
                         "COMPLETED" => JobStatus::Finished,
-                        "FAILED" | "CANCELLED" | "CANCELLED+" | "NODE_FAIL" | "TIMEOUT"
-                        | "OUT_OF_MEMORY" => JobStatus::Error,
+                        "FAILED" | "CANCELLED" | "NODE_FAIL" | "TIMEOUT" | "OUT_OF_MEMORY"
+                        | "BOOT_FAIL" | "DEADLINE" | "PREEMPTED" | "REVOKED" => JobStatus::Error,
                         _ => JobStatus::Undefined,
                     };
-                    statuses.insert(job_id, job_status);
+                    statuses.insert(job_id.to_string(), job_status);
                 }
             }
         }
@@ -141,8 +147,10 @@ impl QueueManager {
         match self {
             Self::Pbs => format!("qstat -u {user} -x"),
             Self::Pueue => "pueue status".to_string(),
-            //TODO: check this starttime
-            Self::Slurm => "sacct -X --starttime 1970-01-01".to_string(),
+            Self::Slurm => {
+                "sacct -X --starttime 1970-01-01 --parsable2 --noheader --format=JobID,State"
+                    .to_string()
+            }
         }
     }
 
@@ -390,18 +398,16 @@ Group "default" (4 parallel): running
 
     #[test]
     fn test_slurm_status_parsing() {
-        // NOTE: the current parser assumes State is at whitespace-split column 4
-        // (format: JobID JobName Partition Account State).
-        let slurm_output = r#"       JobID    JobName  Partition    Account      State
------------- ---------- ---------- ---------- ----------
-       12345      myjob    compute     grpname  COMPLETED
-       12346  otherjob     compute     grpname    RUNNING
-       12347  failedjob    compute     grpname     FAILED
-       12348  queuedjob    compute     grpname    PENDING
-       12349  canceljob    compute     grpname  CANCELLED
-       12350  nodefail     compute     grpname  NODE_FAIL
-       12351  unknownjob   compute     grpname   WHATEVER
-"#;
+        let slurm_output = "12345|COMPLETED
+12346|RUNNING
+12347|FAILED
+12348|PENDING
+12349|CANCELLED by 1000
+12350|NODE_FAIL
+12351|WHATEVER
+12352|COMPLETING
+12353|TIMEOUT
+";
         let statuses = QueueManager::Slurm.status(slurm_output);
         let mut expected = HashMap::new();
         expected.insert("12345".to_string(), JobStatus::Finished);
@@ -411,7 +417,25 @@ Group "default" (4 parallel): running
         expected.insert("12349".to_string(), JobStatus::Error);
         expected.insert("12350".to_string(), JobStatus::Error);
         expected.insert("12351".to_string(), JobStatus::Undefined);
+        expected.insert("12352".to_string(), JobStatus::Running);
+        expected.insert("12353".to_string(), JobStatus::Error);
 
+        assert_eq!(statuses, expected);
+    }
+
+    #[test]
+    fn test_slurm_status_parsing_ignores_non_parsable_lines() {
+        // Regression: the default sacct table put AllocCPUS where the parser
+        // expected State, so every job became Undefined. Table lines must not
+        // produce entries at all.
+        let output = "JobID           JobName  Partition    Account  AllocCPUS      State ExitCode
+------------ ---------- ---------- ---------- ---------- ---------- --------
+290                init    cpu-big default_g+         16    RUNNING      0:0
+291|RUNNING
+";
+        let statuses = QueueManager::Slurm.status(output);
+        let mut expected = HashMap::new();
+        expected.insert("291".to_string(), JobStatus::Running);
         assert_eq!(statuses, expected);
     }
 
@@ -499,7 +523,7 @@ Group "default" (4 parallel): running
         );
         assert_eq!(
             QueueManager::Slurm.status_command("testuser"),
-            "sacct -X --starttime 1970-01-01"
+            "sacct -X --starttime 1970-01-01 --parsable2 --noheader --format=JobID,State"
         );
     }
 
