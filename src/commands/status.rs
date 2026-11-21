@@ -290,6 +290,10 @@ fn create_status_table(
                     Some(dt) => fmt_datetime(dt, is_tty, &display.datetime_format),
                     None => "─".to_string(),
                 }),
+                Column::StatusTime => Cell::new(match j.status_time() {
+                    Some(dt) => fmt_datetime(dt, is_tty, &display.datetime_format),
+                    None => "─".to_string(),
+                }),
                 Column::Tags => Cell::new(fmt_tags(j.tags(), display.max_tags)),
             })
             .collect();

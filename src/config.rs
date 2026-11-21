@@ -38,6 +38,7 @@ pub enum Column {
     Queue,
     SubmitTime,
     SyncTime,
+    StatusTime,
     Tags,
 }
 
@@ -52,6 +53,7 @@ impl Column {
             Self::Queue => "Queue",
             Self::SubmitTime => "Submit time",
             Self::SyncTime => "Sync time",
+            Self::StatusTime => "Status changed",
             Self::Tags => "Tags",
         }
     }
