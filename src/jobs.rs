@@ -1,13 +1,15 @@
 use crate::job::{Error, Job, JobStatus};
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, TransactionBehavior, params};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use tracing::info;
 use uuid::Uuid;
 
-const DB_VERSION: &str = "1";
+/// Schema version this build expects. Bump it and add a step to `migrate` when the
+/// schema changes.
+const DB_VERSION: u32 = 2;
 
 /// A collection of `Job`s that provides centralized management and operations.
 ///
@@ -35,7 +37,7 @@ impl DerefMut for Jobs {
 }
 
 fn open_db(path: &Path) -> Result<Connection, Error> {
-    let conn = Connection::open(path).map_err(|e| Error::DbOpen {
+    let mut conn = Connection::open(path).map_err(|e| Error::DbOpen {
         path: path.to_path_buf(),
         source: e,
     })?;
@@ -55,18 +57,78 @@ fn open_db(path: &Path) -> Result<Connection, Error> {
              status      TEXT,
              queue       TEXT,
              submit_time TEXT,
-             sync_time   TEXT
+             sync_time   TEXT,
+             status_time TEXT
          );
          CREATE TABLE IF NOT EXISTS meta (
              key   TEXT PRIMARY KEY,
              value TEXT
          );",
     )?;
+    // Version 1 is the baseline; `migrate` brings any database up to `DB_VERSION`.
     conn.execute(
-        "INSERT OR IGNORE INTO meta (key, value) VALUES ('version', ?1)",
-        params![DB_VERSION],
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('version', '1')",
+        [],
     )?;
+    migrate(&mut conn)?;
     Ok(conn)
+}
+
+fn schema_version(conn: &Connection) -> Result<u32, Error> {
+    let value: String =
+        conn.query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| {
+            row.get(0)
+        })?;
+    value.parse().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Invalid database version: {value}"),
+        )
+        .into()
+    })
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, Error> {
+    let count: u32 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// Upgrades the schema to `DB_VERSION`.
+///
+/// Each step checks the actual schema rather than trusting the version alone, since
+/// columns have been added by hand to existing databases before.
+fn migrate(conn: &mut Connection) -> Result<(), Error> {
+    if schema_version(conn)? >= DB_VERSION {
+        return Ok(());
+    }
+    // IMMEDIATE takes the write lock up front, so concurrent processes migrate one at a time.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version = schema_version(&tx)?;
+    if version < 2 && !has_column(&tx, "jobs", "status_time")? {
+        // Existing rows stay NULL: their change time is unknown.
+        tx.execute_batch("ALTER TABLE jobs ADD COLUMN status_time TEXT")?;
+    }
+    if version < DB_VERSION {
+        tx.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'version'",
+            params![DB_VERSION.to_string()],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+fn parse_time(s: &str) -> Result<DateTime<Utc>, std::io::Error> {
+    s.parse::<DateTime<Utc>>().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Invalid datetime: {s}"),
+        )
+    })
 }
 
 fn parse_status(s: &str) -> JobStatus {
@@ -91,7 +153,8 @@ impl Jobs {
         let conn = open_db(path)?;
         let mut stmt = conn.prepare(
             "SELECT uuid, remote, remote_id, name, script_file, files_sent, tags, \
-                    work_dir, remote_dir, status, queue, submit_time, sync_time \
+                    work_dir, remote_dir, status, queue, submit_time, sync_time, \
+                    status_time \
              FROM jobs ORDER BY submit_time",
         )?;
 
@@ -111,6 +174,7 @@ impl Jobs {
                     row.get::<_, Option<String>>(10)?, // queue
                     row.get::<_, String>(11)?,         // submit_time
                     row.get::<_, Option<String>>(12)?, // sync_time
+                    row.get::<_, Option<String>>(13)?, // status_time
                 ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
@@ -132,6 +196,7 @@ impl Jobs {
                     queue,
                     submit_time_str,
                     sync_time_str,
+                    status_time_str,
                 )| {
                     let uuid = uuid_str.parse::<Uuid>().map_err(|_| {
                         std::io::Error::new(
@@ -139,22 +204,9 @@ impl Jobs {
                             format!("Invalid UUID: {uuid_str}"),
                         )
                     })?;
-                    let submit_time = submit_time_str.parse::<DateTime<Utc>>().map_err(|_| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("Invalid datetime: {submit_time_str}"),
-                        )
-                    })?;
-                    let sync_time = sync_time_str
-                        .map(|s| {
-                            s.parse::<DateTime<Utc>>().map_err(|_| {
-                                std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    format!("Invalid datetime: {s}"),
-                                )
-                            })
-                        })
-                        .transpose()?;
+                    let submit_time = parse_time(&submit_time_str)?;
+                    let sync_time = sync_time_str.as_deref().map(parse_time).transpose()?;
+                    let status_time = status_time_str.as_deref().map(parse_time).transpose()?;
                     let files_sent: Vec<PathBuf> = files_sent_json
                         .as_deref()
                         .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
@@ -180,6 +232,7 @@ impl Jobs {
                         parse_status(status_str.as_deref().unwrap_or("")),
                         submit_time,
                         sync_time,
+                        status_time,
                     ))
                 },
             )
@@ -209,8 +262,8 @@ impl Jobs {
         conn.execute(
             "INSERT INTO jobs \
              (uuid, remote, remote_id, name, script_file, files_sent, tags, \
-              work_dir, remote_dir, status, queue, submit_time, sync_time) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+              work_dir, remote_dir, status, queue, submit_time, sync_time, status_time) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 job.uuid().to_string(),
                 job.remote(),
@@ -225,6 +278,7 @@ impl Jobs {
                 job.queue(),
                 job.submit_time().to_rfc3339(),
                 job.sync_time().map(DateTime::to_rfc3339),
+                job.status_time().map(DateTime::to_rfc3339),
             ],
         )?;
         Ok(())
@@ -239,7 +293,13 @@ impl Jobs {
         Ok(())
     }
 
-    pub fn update_job_status(&self, uuid: &Uuid, status: JobStatus) -> Result<(), Error> {
+    /// Persists a status. If it differs from the stored one, `status_time` is set to `at`.
+    pub fn update_job_status(
+        &self,
+        uuid: &Uuid,
+        status: JobStatus,
+        at: DateTime<Utc>,
+    ) -> Result<(), Error> {
         let conn = open_db(&self.db_path)?;
         conn.execute(
             "UPDATE jobs SET
@@ -247,9 +307,22 @@ impl Jobs {
                      WHEN status != ?1 AND ?1 IN ('F', 'E', 'U') THEN NULL
                      ELSE sync_time
                  END,
+                 status_time = CASE
+                     WHEN status IS NOT ?1 THEN ?3
+                     ELSE status_time
+                 END,
                  status = ?1
              WHERE uuid = ?2",
-            params![status.as_str(), uuid.to_string()],
+            params![status.as_str(), uuid.to_string(), at.to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_status_time(&self, uuid: &Uuid, status_time: DateTime<Utc>) -> Result<(), Error> {
+        let conn = open_db(&self.db_path)?;
+        conn.execute(
+            "UPDATE jobs SET status_time = ?1 WHERE uuid = ?2",
+            params![status_time.to_rfc3339(), uuid.to_string()],
         )?;
         Ok(())
     }
@@ -383,6 +456,7 @@ impl Jobs {
         remotename: &str,
     ) -> Result<Vec<Job>, Error> {
         let mut changed_jobs = Vec::new();
+        let now = Utc::now();
 
         for job in self
             .jobs
@@ -391,7 +465,7 @@ impl Jobs {
         {
             let old_status = *job.status();
             if let Some(st) = statuses.get(job.remote_id()) {
-                job.set_status(*st);
+                job.set_status(*st, now);
             }
             if job.status() != &old_status {
                 changed_jobs.push(job.clone());
@@ -410,7 +484,7 @@ impl Jobs {
                     job.remote(),
                     job.status()
                 );
-                self.update_job_status(job.uuid(), *job.status())?;
+                self.update_job_status(job.uuid(), *job.status(), now)?;
             }
         }
 
@@ -519,6 +593,7 @@ mod tests {
             status,
             Utc::now(),
             None,
+            None,
         )
     }
 
@@ -563,6 +638,84 @@ mod tests {
 
         let reloaded = Jobs::load_from_db(&path).unwrap();
         assert_eq!(reloaded[0].status(), &JobStatus::Running);
+    }
+
+    #[test]
+    fn test_update_sets_status_time_on_change() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "12345.server", JobStatus::Queued);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let mut jobs = Jobs::load_from_db(&path).unwrap();
+        let statuses = HashMap::from([("12345.server".to_string(), JobStatus::Running)]);
+        let changed = jobs.update(&statuses, "babel").unwrap();
+
+        let t = *changed[0].status_time().unwrap();
+        assert_eq!(jobs[0].status_time(), Some(&t));
+        let reloaded = Jobs::load_from_db(&path).unwrap();
+        assert_eq!(reloaded[0].status_time(), Some(&t));
+    }
+
+    #[test]
+    fn test_update_unchanged_keeps_status_time() {
+        let (_tmp, path) = temp_db();
+        let job = make_job("babel", "12345.server", JobStatus::Queued);
+        Jobs::insert_job(&path, &job).unwrap();
+
+        let mut jobs = Jobs::load_from_db(&path).unwrap();
+        let running = HashMap::from([("12345.server".to_string(), JobStatus::Running)]);
+        jobs.update(&running, "babel").unwrap();
+        let t = *Jobs::load_from_db(&path).unwrap()[0].status_time().unwrap();
+
+        let mut jobs = Jobs::load_from_db(&path).unwrap();
+        let changed = jobs.update(&running, "babel").unwrap();
+        assert!(changed.is_empty());
+        jobs.update_job_status(jobs[0].uuid(), JobStatus::Running, Utc::now())
+            .unwrap();
+
+        let reloaded = Jobs::load_from_db(&path).unwrap();
+        assert_eq!(reloaded[0].status_time(), Some(&t));
+    }
+
+    #[test]
+    fn test_migrate_v1_database() {
+        let (_tmp, path) = temp_db();
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE jobs (
+                     uuid TEXT PRIMARY KEY, remote TEXT NOT NULL, remote_id TEXT,
+                     name TEXT, script_file TEXT, tags TEXT, work_dir TEXT,
+                     remote_dir TEXT, status TEXT, queue TEXT, submit_time TEXT,
+                     sync_time TEXT, files_sent TEXT
+                 );
+                 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+                 INSERT INTO meta VALUES ('version', '1');
+                 INSERT INTO jobs (uuid, remote, remote_id, status, submit_time)
+                 VALUES ('7650fa7b-3474-46fb-b9b1-aadc9085d735', 'njup', '290', 'F',
+                         '2026-11-21T18:07:35+00:00');",
+            )
+            .unwrap();
+        }
+
+        let jobs = Jobs::load_from_db(&path).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert!(jobs[0].status_time().is_none());
+
+        let conn = Connection::open(&path).unwrap();
+        assert!(has_column(&conn, "jobs", "status_time").unwrap());
+        assert_eq!(schema_version(&conn).unwrap(), DB_VERSION);
+        // Opening again is a no-op.
+        drop(open_db(&path).unwrap());
+        assert_eq!(schema_version(&conn).unwrap(), DB_VERSION);
+    }
+
+    #[test]
+    fn test_new_database_is_current_version() {
+        let (_tmp, path) = temp_db();
+        let conn = open_db(&path).unwrap();
+        assert_eq!(schema_version(&conn).unwrap(), DB_VERSION);
+        assert!(has_column(&conn, "jobs", "status_time").unwrap());
     }
 
     #[test]
@@ -636,6 +789,7 @@ mod tests {
             JobStatus::Queued,
             Utc::now(),
             None,
+            None,
         );
         let job2 = Job::new(
             uuid2,
@@ -650,6 +804,7 @@ mod tests {
             PathBuf::from("/remote"),
             JobStatus::Queued,
             Utc::now(),
+            None,
             None,
         );
         Jobs::insert_job(&path, &job1).unwrap();
@@ -707,6 +862,7 @@ mod tests {
             JobStatus::Finished,
             Utc::now(),
             Some(Utc::now()),
+            None,
         );
         Jobs::insert_job(&path, &synced_job).unwrap();
 
@@ -736,6 +892,7 @@ mod tests {
             JobStatus::Finished,
             Utc::now(),
             Some(Utc::now()),
+            None,
         );
         Jobs::insert_job(&path, &already_synced).unwrap();
 

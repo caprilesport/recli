@@ -325,6 +325,7 @@ mod tests {
             JobStatus::Queued,
             Utc::now(),
             None,
+            None,
         )
     }
 

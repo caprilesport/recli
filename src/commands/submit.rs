@@ -137,6 +137,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         let mut files_sent = vec![script_path.clone()];
         files_sent.extend_from_slice(&companion_files);
 
+        let now = Utc::now();
         let job = Job::new(
             id,
             remote.name().to_owned(),
@@ -149,8 +150,9 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             work_dir,
             remote_dir,
             JobStatus::Queued,
-            Utc::now(),
+            now,
             None,
+            Some(now),
         );
 
         Jobs::insert_job(&ctx.db_path, &job)?;

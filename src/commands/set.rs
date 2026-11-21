@@ -71,7 +71,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         jobs.update_script_file(&uuid, script_file)?;
     }
     if let Some(status) = args.status {
-        jobs.update_job_status(&uuid, status)?;
+        jobs.update_job_status(&uuid, status, chrono::Utc::now())?;
     }
     if !args.tags.is_empty() {
         jobs.update_tags(&uuid, &args.tags)?;
