@@ -75,9 +75,9 @@ impl QueueManager {
                         let status = parts[9].to_string();
                         let job_status = match status.as_str() {
                             "Q" => JobStatus::Queued,
-                            "R" => JobStatus::Running,
+                            // E is Exiting: the job is ending and staging files back.
+                            "R" | "E" => JobStatus::Running,
                             "F" => JobStatus::Finished,
-                            "E" => JobStatus::Error,
                             _ => JobStatus::Undefined,
                         };
                         statuses.insert(job_id, job_status);
@@ -329,7 +329,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12345.server    testuser  small   ts-produc* 13716*   1   8   11gb 10000 Q 2345:
 12346.server    testuser  big     solvation* 33526*   1  16   28gb 10000 R 104:4
 12347.server    testuser  big     init.job   24242*   1  16   30gb 10000 F 497:3
-12348.server    testuser  big     error.job  11111*   1  16   30gb 10000 E 001:0
+12348.server    testuser  big     exiting.j* 11111*   1  16   30gb 10000 E 001:0
 12349.server    testuser  big     weird.job  22222*   1  16   30gb 10000 X 000:0
 ";
         let statuses = QueueManager::Pbs.status(pbs_output);
@@ -337,7 +337,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
         expected.insert("12345.server".to_string(), JobStatus::Queued);
         expected.insert("12346.server".to_string(), JobStatus::Running);
         expected.insert("12347.server".to_string(), JobStatus::Finished);
-        expected.insert("12348.server".to_string(), JobStatus::Error);
+        expected.insert("12348.server".to_string(), JobStatus::Running);
         expected.insert("12349.server".to_string(), JobStatus::Undefined);
 
         assert_eq!(statuses, expected);
