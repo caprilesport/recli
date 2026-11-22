@@ -100,26 +100,11 @@ pub fn execute(args: Args, ctx: Context) -> color_eyre::Result<()> {
 mod tests {
     use super::*;
 
-    fn unreachable_remote(name: &str) -> Remote {
-        // Port 1 on loopback refuses the connection at once.
-        toml::from_str(&format!(
-            r#"
-            name = "{name}"
-            hostname = "127.0.0.1"
-            port = 1
-            user = "nobody"
-            work_directory = "/tmp"
-            queue_manager = "Pbs"
-            "#
-        ))
-        .unwrap()
-    }
-
     #[test]
     fn test_fetch_reports_unreachable_remotes() {
         let db = tempfile::NamedTempFile::new().unwrap();
         let jobs = Arc::new(Mutex::new(Jobs::load_from_db(db.path()).unwrap()));
-        let remotes = [unreachable_remote("b"), unreachable_remote("a")];
+        let remotes = [Remote::unreachable("b"), Remote::unreachable("a")];
 
         let outcome = fetch_statuses(&remotes, &jobs);
 
