@@ -2,10 +2,11 @@ use crate::commands::fetch::fetch_statuses;
 use crate::connection::SshConnection;
 use crate::job::Job;
 use crate::jobs::Jobs;
-use rayon::prelude::*;
+use crate::remote::Remote;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Fetches the latest job statuses then downloads output files for finished jobs.
 ///
@@ -85,50 +86,88 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
             return Ok(());
         }
 
-        let arcmtx = Arc::new(Mutex::new(jobs));
-        let synced: Arc<Mutex<Vec<Job>>> = Arc::new(Mutex::new(Vec::new()));
+        let jobs = Mutex::new(jobs);
+        let synced = Mutex::new(Vec::new());
 
-        syncable_jobs.par_iter().for_each(|(remote_name, ids)| {
-            let remote = match ctx.config.get_remote(remote_name) {
-                Ok(r) => r,
-                Err(e) => {
-                    error!("Invalid remote {}: {}", remote_name, e);
-                    return;
-                }
-            };
-
-            let connection = match SshConnection::new(remote) {
-                Ok(conn) => conn,
-                Err(e) => {
-                    error!("Failed to connect to {}: {}", remote.name(), e);
-                    return;
-                }
-            };
-
-            ids.par_iter().for_each(|id| {
-                let Some(job) = arcmtx.lock().unwrap().find_by_id(id).cloned() else {
-                    error!("Unable to find job {id}");
-                    return;
-                };
-
-                match Jobs::sync_job(&job, &connection, &ctx.config.ignore) {
-                    Ok(sync_time) => {
-                        if let Err(e) = arcmtx.lock().unwrap().update_sync_time(id, sync_time) {
-                            error!("Failed to update sync time for {}: {}", job.short_id(), e);
-                        } else {
-                            synced.lock().unwrap().push(job);
-                        }
+        // Each remote downloads on its own threads: a worker waiting for one remote's
+        // channel pool must not hold up the others.
+        std::thread::scope(|s| {
+            for (remote_name, ids) in &syncable_jobs {
+                match ctx.config.get_remote(remote_name) {
+                    Ok(remote) => {
+                        let (jobs, synced, ignore) = (&jobs, &synced, &ctx.config.ignore);
+                        s.spawn(move || sync_remote(remote, ids, jobs, synced, ignore));
                     }
-                    Err(e) => error!("Failed to pull job {}: {}", job.short_id(), e),
+                    Err(e) => error!("Invalid remote {}: {}", remote_name, e),
                 }
-            });
+            }
         });
 
         if ctx.json {
-            let synced = Arc::try_unwrap(synced).unwrap().into_inner().unwrap();
+            let synced = synced.into_inner().unwrap();
             println!("{}", serde_json::to_string_pretty(&synced)?);
         }
     }
 
     Ok(())
+}
+
+/// Downloads the given jobs from one remote over a single connection, running as
+/// many downloads at once as the server allows channels (at most one per job).
+fn sync_remote(
+    remote: &Remote,
+    ids: &[Uuid],
+    jobs: &Mutex<Jobs>,
+    synced: &Mutex<Vec<Job>>,
+    ignore: &[glob::Pattern],
+) {
+    let connection = match SshConnection::new(remote) {
+        Ok(conn) => conn,
+        Err(e) => {
+            error!("Failed to connect to {}: {}", remote.name(), e);
+            return;
+        }
+    };
+
+    let workers = match connection.open_sftp_channels(ids.len()) {
+        Ok(n) => n,
+        Err(e) => {
+            error!("Failed to open SFTP channels on {}: {}", remote.name(), e);
+            return;
+        }
+    };
+    debug!(
+        "Downloading {} jobs from {} over {workers} channels",
+        ids.len(),
+        remote.name()
+    );
+
+    let queue = Mutex::new(ids.iter());
+
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| {
+                loop {
+                    let Some(id) = queue.lock().unwrap().next() else {
+                        break;
+                    };
+                    let Some(job) = jobs.lock().unwrap().find_by_id(id).cloned() else {
+                        error!("Unable to find job {id}");
+                        continue;
+                    };
+
+                    match Jobs::sync_job(&job, &connection, ignore) {
+                        Ok(sync_time) => {
+                            if let Err(e) = jobs.lock().unwrap().update_sync_time(id, sync_time) {
+                                error!("Failed to update sync time for {}: {}", job.short_id(), e);
+                            } else {
+                                synced.lock().unwrap().push(job);
+                            }
+                        }
+                        Err(e) => error!("Failed to pull job {}: {}", job.short_id(), e),
+                    }
+                }
+            });
+        }
+    });
 }

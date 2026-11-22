@@ -194,6 +194,42 @@ impl<T> ChannelPool<T> {
         }
     }
 
+    /// Opens channels one at a time, until `max` are open or the server refuses one,
+    /// and keeps them idle in the pool. Returns how many channels the pool holds.
+    ///
+    /// Errors only if no channel could be opened at all.
+    fn fill(
+        &self,
+        max: usize,
+        open: impl Fn() -> Result<T, ssh2::Error>,
+    ) -> Result<usize, ssh2::Error> {
+        let mut state = self.state.lock().unwrap();
+        while state.open < max && state.limit.is_none_or(|limit| state.open < limit) {
+            state.open += 1;
+            drop(state);
+            let result = open();
+            state = self.state.lock().unwrap();
+            match result {
+                Ok(channel) => state.idle.push(channel),
+                Err(e) => {
+                    state.open -= 1;
+                    if state.open == 0 {
+                        return Err(e);
+                    }
+                    if is_channel_limit(&e) {
+                        debug!("Server refused a new channel; using at most {}", state.open);
+                        state.limit = Some(state.open);
+                    } else {
+                        debug!("Stopped opening channels at {}: {e}", state.open);
+                    }
+                    break;
+                }
+            }
+        }
+        self.released.notify_all();
+        Ok(state.open)
+    }
+
     fn release(&self, channel: T) {
         self.state.lock().unwrap().idle.push(channel);
         self.released.notify_one();
@@ -265,6 +301,17 @@ impl SshConnection {
 
     fn with_sftp<R>(&self, f: impl FnOnce(&Sftp) -> Result<R, Error>) -> Result<R, Error> {
         self.sftp.with(|| self.session.sftp(), f)
+    }
+
+    /// Opens up to `max` SFTP channels ahead of parallel transfers, stopping at the
+    /// server's limit. Returns how many are available, i.e. how many transfers can
+    /// run at once on this connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not even one channel can be opened.
+    pub fn open_sftp_channels(&self, max: usize) -> Result<usize, Error> {
+        Ok(self.sftp.fill(max, || self.session.sftp())?)
     }
 
     fn authenticate(
@@ -570,8 +617,8 @@ impl RemoteConnection for SshConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Barrier;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Opens numbered fake channels, refusing like `sshd` once `limit` are open.
     struct FakeServer {
@@ -632,6 +679,61 @@ mod tests {
         assert_eq!(done.load(Ordering::SeqCst), 16);
         assert_eq!(server.max_seen.load(Ordering::SeqCst), 3);
         assert_eq!(pool.state.lock().unwrap().limit, Some(3));
+    }
+
+    #[test]
+    fn test_fill_stops_at_server_limit() {
+        let server = FakeServer::new(3);
+        let pool = ChannelPool::new();
+        assert_eq!(pool.fill(16, || server.open()).unwrap(), 3);
+        let state = pool.state.lock().unwrap();
+        assert_eq!(state.limit, Some(3));
+        assert_eq!(state.idle.len(), 3);
+    }
+
+    #[test]
+    fn test_fill_opens_no_more_than_needed() {
+        let server = FakeServer::new(10);
+        let pool = ChannelPool::new();
+        assert_eq!(pool.fill(4, || server.open()).unwrap(), 4);
+        assert_eq!(server.opened_total.load(Ordering::SeqCst), 4);
+        assert_eq!(pool.state.lock().unwrap().limit, None);
+    }
+
+    #[test]
+    fn test_fill_refused_first_channel_is_an_error() {
+        let server = FakeServer::new(0);
+        let pool = ChannelPool::new();
+        let err = pool.fill(16, || server.open()).unwrap_err();
+        assert!(is_channel_limit(&err));
+    }
+
+    #[test]
+    fn test_fill_then_workers_never_open_more() {
+        let server = FakeServer::new(3);
+        let pool = ChannelPool::new();
+        let workers = pool.fill(16, || server.open()).unwrap();
+        let done = AtomicUsize::new(0);
+
+        std::thread::scope(|s| {
+            for _ in 0..workers {
+                s.spawn(|| {
+                    for _ in 0..5 {
+                        pool.with(
+                            || server.open(),
+                            |_| -> Result<(), ssh2::Error> {
+                                done.fetch_add(1, Ordering::SeqCst);
+                                Ok(())
+                            },
+                        )
+                        .unwrap();
+                    }
+                });
+            }
+        });
+
+        assert_eq!(done.load(Ordering::SeqCst), 15);
+        assert_eq!(server.opened_total.load(Ordering::SeqCst), 3);
     }
 
     #[test]
