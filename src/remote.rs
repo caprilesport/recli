@@ -155,6 +155,23 @@ impl Remote {
 }
 
 #[cfg(test)]
+impl Remote {
+    /// A remote on loopback port 1, which refuses connections at once.
+    pub fn unreachable(name: &str) -> Self {
+        Remote {
+            name: name.to_string(),
+            hostname: "127.0.0.1".to_string(),
+            port: 1,
+            user: "nobody".to_string(),
+            work_directory: PathBuf::from("/tmp"),
+            check_queue: false,
+            queue_manager: QueueManager::Pbs,
+            identity_file: None,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::connection::RemoteConnection;

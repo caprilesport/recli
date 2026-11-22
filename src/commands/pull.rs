@@ -3,6 +3,7 @@ use crate::connection::SshConnection;
 use crate::job::Job;
 use crate::jobs::Jobs;
 use crate::remote::Remote;
+use color_eyre::eyre::eyre;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -75,7 +76,13 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
         // Step 1: fetch all statuses in parallel
         let jobs = Jobs::load_from_db(&ctx.db_path)?;
         let arcmtx = Arc::new(Mutex::new(jobs));
-        fetch_statuses(&ctx.config.remotes, &arcmtx);
+        // A remote that fails here is reported at the end; pull still downloads
+        // what it can.
+        let fetched = fetch_statuses(&ctx.config.remotes, &arcmtx);
+        let mut failures = Vec::new();
+        if !fetched.failed.is_empty() {
+            failures.push(format!("fetch failed for: {}", fetched.failed.join(", ")));
+        }
 
         // Step 2: download files for all now-finished jobs
         let jobs = Jobs::load_from_db(&ctx.db_path)?;
@@ -83,11 +90,11 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
 
         if syncable_jobs.is_empty() {
             info!("No jobs to pull");
-            return Ok(());
         }
 
         let jobs = Mutex::new(jobs);
         let synced = Mutex::new(Vec::new());
+        let failures = Mutex::new(failures);
 
         // Each remote downloads on its own threads: a worker waiting for one remote's
         // channel pool must not hold up the others.
@@ -95,10 +102,20 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
             for (remote_name, ids) in &syncable_jobs {
                 match ctx.config.get_remote(remote_name) {
                     Ok(remote) => {
-                        let (jobs, synced, ignore) = (&jobs, &synced, &ctx.config.ignore);
-                        s.spawn(move || sync_remote(remote, ids, jobs, synced, ignore));
+                        let (jobs, synced, failures) = (&jobs, &synced, &failures);
+                        let ignore = &ctx.config.ignore;
+                        s.spawn(move || {
+                            let failed = sync_remote(remote, ids, jobs, synced, ignore);
+                            failures.lock().unwrap().extend(failed);
+                        });
                     }
-                    Err(e) => error!("Invalid remote {}: {}", remote_name, e),
+                    Err(e) => {
+                        error!("Invalid remote {}: {}", remote_name, e);
+                        failures
+                            .lock()
+                            .unwrap()
+                            .push(format!("unknown remote {remote_name}"));
+                    }
                 }
             }
         });
@@ -107,6 +124,12 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
             let synced = synced.into_inner().unwrap();
             println!("{}", serde_json::to_string_pretty(&synced)?);
         }
+
+        let mut failures = failures.into_inner().unwrap();
+        if !failures.is_empty() {
+            failures.sort();
+            return Err(eyre!("pull incomplete: {}", failures.join("; ")));
+        }
     }
 
     Ok(())
@@ -114,18 +137,27 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
 
 /// Downloads the given jobs from one remote over a single connection, running as
 /// many downloads at once as the server allows channels (at most one per job).
+/// Returns a short description of each failure; errors are also logged.
 fn sync_remote(
     remote: &Remote,
     ids: &[Uuid],
     jobs: &Mutex<Jobs>,
     synced: &Mutex<Vec<Job>>,
     ignore: &[glob::Pattern],
-) {
+) -> Vec<String> {
+    let unreachable = || {
+        vec![format!(
+            "no downloads from {} ({} jobs)",
+            remote.name(),
+            ids.len()
+        )]
+    };
+
     let connection = match SshConnection::new(remote) {
         Ok(conn) => conn,
         Err(e) => {
             error!("Failed to connect to {}: {}", remote.name(), e);
-            return;
+            return unreachable();
         }
     };
 
@@ -133,7 +165,7 @@ fn sync_remote(
         Ok(n) => n,
         Err(e) => {
             error!("Failed to open SFTP channels on {}: {}", remote.name(), e);
-            return;
+            return unreachable();
         }
     };
     debug!(
@@ -143,6 +175,7 @@ fn sync_remote(
     );
 
     let queue = Mutex::new(ids.iter());
+    let failed = Mutex::new(Vec::new());
 
     std::thread::scope(|s| {
         for _ in 0..workers {
@@ -153,6 +186,7 @@ fn sync_remote(
                     };
                     let Some(job) = jobs.lock().unwrap().find_by_id(id).cloned() else {
                         error!("Unable to find job {id}");
+                        failed.lock().unwrap().push(id.to_string());
                         continue;
                     };
 
@@ -160,14 +194,43 @@ fn sync_remote(
                         Ok(sync_time) => {
                             if let Err(e) = jobs.lock().unwrap().update_sync_time(id, sync_time) {
                                 error!("Failed to update sync time for {}: {}", job.short_id(), e);
+                                failed.lock().unwrap().push(job.short_id());
                             } else {
                                 synced.lock().unwrap().push(job);
                             }
                         }
-                        Err(e) => error!("Failed to pull job {}: {}", job.short_id(), e),
+                        Err(e) => {
+                            error!("Failed to pull job {}: {}", job.short_id(), e);
+                            failed.lock().unwrap().push(job.short_id());
+                        }
                     }
                 }
             });
         }
     });
+
+    let mut failed = failed.into_inner().unwrap();
+    if failed.is_empty() {
+        return failed;
+    }
+    failed.sort();
+    vec![format!("download failed for: {}", failed.join(", "))]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_remote_reports_unreachable_remote() {
+        let db = tempfile::NamedTempFile::new().unwrap();
+        let jobs = Mutex::new(Jobs::load_from_db(db.path()).unwrap());
+        let synced = Mutex::new(Vec::new());
+        let ids = [Uuid::new_v4(), Uuid::new_v4()];
+
+        let failures = sync_remote(&Remote::unreachable("dead"), &ids, &jobs, &synced, &[]);
+
+        assert_eq!(failures, ["no downloads from dead (2 jobs)"]);
+        assert!(synced.into_inner().unwrap().is_empty());
+    }
 }
