@@ -738,7 +738,7 @@ mod tests {
     fn test_copy_large_empty_input() {
         let mut out = Vec::new();
         assert_eq!(copy_large(&mut std::io::empty(), &mut out).unwrap(), 0);
-        assert!(out.is_empty());
+        assert_eq!(out, Vec::<u8>::new());
     }
 
     #[test]
@@ -845,7 +845,7 @@ mod tests {
         );
         assert!(result.is_err());
         let state = pool.state.lock().unwrap();
-        assert!(state.idle.is_empty());
+        assert_eq!(state.idle, Vec::<usize>::new());
         assert_eq!(state.open, 0);
     }
 }
