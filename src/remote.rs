@@ -188,7 +188,7 @@ mod tests {
             if let Some(output) = self.mock_output.borrow().get(command) {
                 Ok(output.clone())
             } else {
-                Ok("".to_string())
+                Ok(String::new())
             }
         }
 
@@ -294,13 +294,13 @@ mod tests {
         let remote = create_test_remote();
         let connection = MockConnection::new();
 
-        let status_output = r#"
+        let status_output = r"
 ufsc:
                                                             Req'd  Req'd   Elap
 Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
 12345.server    testuser  small   ts-produc* 13716*   1   8   11gb 10000 Q 2345:
-"#;
+";
         connection.mock_output.borrow_mut().insert(
             "qstat -u testuser -x".to_string(),
             status_output.to_string(),

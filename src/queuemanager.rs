@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_pbs_status_parsing() {
-        let pbs_output = r#"
+        let pbs_output = r"
 ufsc:
                                                             Req'd  Req'd   Elap
 Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
@@ -331,7 +331,7 @@ Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
 12347.server    testuser  big     init.job   24242*   1  16   30gb 10000 F 497:3
 12348.server    testuser  big     error.job  11111*   1  16   30gb 10000 E 001:0
 12349.server    testuser  big     weird.job  22222*   1  16   30gb 10000 X 000:0
-"#;
+";
         let statuses = QueueManager::Pbs.status(pbs_output);
         let mut expected = HashMap::new();
         expected.insert("12345.server".to_string(), JobStatus::Queued);

@@ -40,6 +40,10 @@ pub struct Job {
     status: JobStatus,
     submit_time: DateTime<Utc>,
     sync_time: Option<DateTime<Utc>>,
+    /// When recli last observed a status change (fetch time, not the scheduler's
+    /// own timestamp). `None` for jobs recorded before this field existed.
+    #[serde(default)]
+    status_time: Option<DateTime<Utc>>,
 }
 
 impl Job {
@@ -58,6 +62,7 @@ impl Job {
         status: JobStatus,
         submit_time: DateTime<Utc>,
         sync_time: Option<DateTime<Utc>>,
+        status_time: Option<DateTime<Utc>>,
     ) -> Self {
         Self {
             uuid,
@@ -73,6 +78,7 @@ impl Job {
             status,
             submit_time,
             sync_time,
+            status_time,
         }
     }
 
@@ -136,12 +142,21 @@ impl Job {
         self.sync_time.as_ref()
     }
 
-    pub fn set_status(&mut self, status: JobStatus) {
-        if self.status != status && !matches!(status, JobStatus::Queued | JobStatus::Running) {
+    pub const fn status_time(&self) -> Option<&DateTime<Utc>> {
+        self.status_time.as_ref()
+    }
+
+    /// Sets the status. If it differs from the current one, `status_time` is set to `at`.
+    pub fn set_status(&mut self, status: JobStatus, at: DateTime<Utc>) {
+        if self.status == status {
+            return;
+        }
+        if !matches!(status, JobStatus::Queued | JobStatus::Running) {
             // A download made before completion is not a final synchronization.
             self.sync_time = None;
         }
         self.status = status;
+        self.status_time = Some(at);
     }
 }
 
@@ -198,6 +213,7 @@ mod tests {
             status,
             submit_time: Utc::now(),
             sync_time,
+            status_time: None,
         }
     }
 
@@ -240,6 +256,31 @@ mod tests {
     }
 
     #[test]
+    fn test_set_status_records_change_time() {
+        let mut job = make_job(JobStatus::Queued, None);
+        let t = Utc::now();
+        job.set_status(JobStatus::Running, t);
+        assert_eq!(job.status_time(), Some(&t));
+    }
+
+    #[test]
+    fn test_set_same_status_keeps_change_time() {
+        let mut job = make_job(JobStatus::Running, Some(Utc::now()));
+        job.set_status(JobStatus::Running, Utc::now());
+        assert!(job.status_time().is_none());
+        assert!(job.sync_time().is_some());
+    }
+
+    #[test]
+    fn test_deserialize_without_status_time() {
+        let job = make_job(JobStatus::Finished, None);
+        let mut value = serde_json::to_value(&job).unwrap();
+        value.as_object_mut().unwrap().remove("status_time");
+        let job: Job = serde_json::from_value(value).unwrap();
+        assert!(job.status_time().is_none());
+    }
+
+    #[test]
     fn test_from_parts_roundtrip() {
         let uuid = Uuid::new_v4();
         let submit_time = Utc::now();
@@ -259,6 +300,7 @@ mod tests {
             JobStatus::Finished,
             submit_time,
             sync_time,
+            None,
         );
 
         assert_eq!(job.uuid(), &uuid);

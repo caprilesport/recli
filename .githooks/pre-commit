@@ -2,5 +2,5 @@
 set -e
 
 cargo fmt --check
-cargo clippy -- -D clippy::pedantic
+cargo clippy --all-targets -- -D clippy::pedantic
 cargo test

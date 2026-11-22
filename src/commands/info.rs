@@ -49,13 +49,15 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             .with_timezone(&chrono::Local)
             .format("%Y-%m-%d %H:%M")
             .to_string();
-        let sync_time = match job.sync_time() {
+        let fmt_optional = |t: Option<&chrono::DateTime<chrono::Utc>>| match t {
             Some(t) => t
                 .with_timezone(&chrono::Local)
                 .format("%Y-%m-%d %H:%M")
                 .to_string(),
             None => "─".to_string(),
         };
+        let sync_time = fmt_optional(job.sync_time());
+        let status_time = fmt_optional(job.status_time());
 
         let mut detail = Table::new();
         detail
@@ -69,6 +71,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         detail.add_row(vec![bold("Work dir:"), Cell::new(work_dir)]);
         detail.add_row(vec![bold("Remote dir:"), Cell::new(remote_dir)]);
         detail.add_row(vec![bold("Submitted:"), Cell::new(&submit_time)]);
+        detail.add_row(vec![bold("Status changed:"), Cell::new(&status_time)]);
         detail.add_row(vec![bold("Synced:"), Cell::new(&sync_time)]);
         detail.add_row(vec![bold("UUID:"), Cell::new(job.uuid().to_string())]);
 
@@ -104,6 +107,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
             })?,
         ]);
         table.add_row(["status", job.status().as_str()]);
+        table.add_row([
+            "status_time",
+            &job.status_time()
+                .map_or_else(String::new, chrono::DateTime::to_rfc3339),
+        ]);
         writeln!(stdout, "{table}")?;
     }
 

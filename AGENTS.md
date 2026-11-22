@@ -11,7 +11,7 @@ cargo test                           # full suite
 cargo test test_slurm_status_parsing # single test by name substring
 cargo test queuemanager::            # all tests in one module
 cargo fmt --check
-cargo clippy -- -D clippy::pedantic
+cargo clippy --all-targets -- -D clippy::pedantic
 ```
 
 CI (`.github/workflows/ci.yml`) and the pre-commit hook (`.githooks/pre-commit`) run exactly the fmt check, pedantic clippy as errors, and tests. Code must pass `clippy::pedantic`; prefer fixing lints over `#[allow]`. Enable the hook with `git config core.hooksPath .githooks`.

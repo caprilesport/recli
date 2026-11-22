@@ -108,6 +108,8 @@ columns = [
 ]
 ```
 
+`status_time` is also available as a column but is not shown by default.
+
 `identity_file` and `check_queue` are optional. `check_queue` defaults to
 `false`; it controls which remotes are queried by `recli queue` when no remote
 names are supplied. Valid queue-manager values are `Pbs`, `Slurm`, and `Pueue`.
@@ -156,7 +158,12 @@ equivalent to `recli status`:
 recli status
 recli status --remote cluster --status running
 recli status --all
+recli status --json --id 7a91c2e --id 539cb4b
 ```
+
+`--id` takes a UUID prefix and can be repeated; jobs matching any of them are
+shown. Jobs selected with `--id` or `--uuid` are shown even when they fall
+outside `status_window_hours`.
 
 In an interactive terminal, the green part of each ID is the shortest UUID
 prefix that uniquely identifies that job. The ID grows beyond its usual seven
@@ -209,6 +216,9 @@ use ~/.cache/recli-completions.nu *
 show locally cached information. Run `recli fetch` to refresh it. Cancellation
 also does not immediately change the cached status.
 
+With `--json`, commands print JSON on stdout and logs on stderr, so the output
+can be piped to tools like `jq`.
+
 ## File selection and synchronization
 
 Every submitted script receives a UUID and its own directory beneath the
@@ -232,6 +242,12 @@ configuration directory. Each record includes its UUID, scheduler ID, remote,
 local and remote directories, submitted files, tags, queue, status, and submit
 and synchronization times.
 
+`status_time` records when the status last changed: the submission time for a
+new job, or the time of the `fetch` that observed the change. It is when recli
+noticed the change, not the scheduler's own timestamp, so its precision depends
+on how often `fetch` runs. Jobs recorded before this field existed have
+`status_time: null` until their status changes again.
+
 ## Current limitations
 
 - Each command invocation establishes a new SSH connection; persistent SSH
@@ -246,8 +262,8 @@ and synchronization times.
 Bug reports and pull requests are welcome. Before submitting a change, run:
 
 ```bash
-cargo fmt -- --check
-cargo clippy --all-targets --all-features
+cargo fmt --check
+cargo clippy --all-targets -- -D clippy::pedantic
 cargo test
 ```
 

@@ -72,8 +72,11 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
 
     // Always update: new remote_id, reset status and timestamps, refresh parsed fields
     jobs.update_remote_id(&uuid, &remote_id)?;
-    jobs.update_submit_time(&uuid, Utc::now())?;
-    jobs.update_job_status(&uuid, JobStatus::Queued)?;
+    let now = Utc::now();
+    jobs.update_submit_time(&uuid, now)?;
+    jobs.update_job_status(&uuid, JobStatus::Queued, now)?;
+    // A resubmission is a new status even if the job was already queued.
+    jobs.update_status_time(&uuid, now)?;
     jobs.clear_sync_time(&uuid)?;
     jobs.update_files_sent(&uuid, &files_sent)?;
     jobs.update_name(&uuid, &job_name)?;
