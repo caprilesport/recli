@@ -75,7 +75,8 @@ pub fn execute(args: Args, mut ctx: crate::Context) -> color_eyre::Result<()> {
         // Step 1: fetch all statuses in parallel
         let jobs = Jobs::load_from_db(&ctx.db_path)?;
         let arcmtx = Arc::new(Mutex::new(jobs));
-        fetch_statuses(&ctx.config.remotes, &arcmtx);
+        // Failures are already logged; pull still downloads from the remotes that worked.
+        let _ = fetch_statuses(&ctx.config.remotes, &arcmtx);
 
         // Step 2: download files for all now-finished jobs
         let jobs = Jobs::load_from_db(&ctx.db_path)?;
