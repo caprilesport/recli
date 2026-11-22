@@ -127,6 +127,29 @@ pub trait RemoteConnection {
 /// reports it with this code for SFTP and exec channels alike.
 const CHANNEL_FAILURE: i32 = -21;
 
+/// Buffer size for SFTP file transfers.
+///
+/// libssh2 pipelines read and write requests only within the buffer it is given, so
+/// `io::copy`'s 8 KB buffer costs a network round trip per 8 KB. A large buffer keeps
+/// many requests in flight.
+const TRANSFER_BUFFER_SIZE: usize = 1 << 20;
+
+/// Like `io::copy`, but with a `TRANSFER_BUFFER_SIZE` buffer.
+fn copy_large<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> std::io::Result<u64> {
+    let mut buffer = vec![0; TRANSFER_BUFFER_SIZE];
+    let mut total = 0;
+    loop {
+        let n = match reader.read(&mut buffer) {
+            Ok(0) => return Ok(total),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        writer.write_all(&buffer[..n])?;
+        total += n as u64;
+    }
+}
+
 fn is_channel_limit(err: &ssh2::Error) -> bool {
     err.code() == ssh2::ErrorCode::Session(CHANNEL_FAILURE)
 }
@@ -556,7 +579,7 @@ impl RemoteConnection for SshConnection {
                                 path: remote_path.clone(),
                                 source: e,
                             })?;
-                    std::io::copy(&mut local_file, &mut remote_file)?;
+                    copy_large(&mut local_file, &mut remote_file)?;
                 }
             }
             Ok(())
@@ -598,7 +621,7 @@ impl RemoteConnection for SshConnection {
                                 source: e,
                             })?;
                         debug!("Downloading {:?}", remote_path);
-                        std::io::copy(&mut remote_file, &mut local_file)?;
+                        copy_large(&mut remote_file, &mut local_file)?;
                     }
                 }
             }
@@ -679,6 +702,43 @@ mod tests {
         assert_eq!(done.load(Ordering::SeqCst), 16);
         assert_eq!(server.max_seen.load(Ordering::SeqCst), 3);
         assert_eq!(pool.state.lock().unwrap().limit, Some(3));
+    }
+
+    /// Returns data in small, uneven chunks, like a network stream.
+    struct ChunkedReader {
+        data: Vec<u8>,
+        pos: usize,
+    }
+
+    impl Read for ChunkedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = buf.len().min(7919).min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn test_copy_large_copies_everything() {
+        let data: Vec<u8> = (0..3 * TRANSFER_BUFFER_SIZE + 123)
+            .map(|i| u8::try_from(i % 251).unwrap())
+            .collect();
+        let mut reader = ChunkedReader {
+            data: data.clone(),
+            pos: 0,
+        };
+        let mut out = Vec::new();
+        let copied = copy_large(&mut reader, &mut out).unwrap();
+        assert_eq!(copied, data.len() as u64);
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn test_copy_large_empty_input() {
+        let mut out = Vec::new();
+        assert_eq!(copy_large(&mut std::io::empty(), &mut out).unwrap(), 0);
+        assert!(out.is_empty());
     }
 
     #[test]
