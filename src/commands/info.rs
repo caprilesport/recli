@@ -110,8 +110,7 @@ pub fn execute(args: Args, ctx: crate::Context) -> color_eyre::Result<()> {
         table.add_row([
             "status_time",
             &job.status_time()
-                .map(chrono::DateTime::to_rfc3339)
-                .unwrap_or_default(),
+                .map_or_else(String::new, chrono::DateTime::to_rfc3339),
         ]);
         writeln!(stdout, "{table}")?;
     }
